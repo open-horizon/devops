@@ -1,0 +1,91 @@
+version: '3'
+
+volumes:
+  exchangedb:
+  mongovol:
+
+networks:
+  horizonnet:
+    driver: bridge
+
+services:
+
+  agbot:
+    image: openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
+    container_name: agbot
+    privileged: true
+    networks: horizonnet
+    restart: always
+    ports:
+      - ${AGBOT_PORT}:${AGBOT_PORT}
+    volumes:
+      - ${PWD}/agbot.json:/etc/horizon/anax.json
+    environment:
+      - HZN_VAR_BASE=/home/agbotuser
+      - HZN_DISABLE_IPTABLES_MANIPULATION=true
+      #- AGBOT_NAME=${AGBOT_ID}
+      #- CSS_URL=${CSS_URL}
+      #- EXCH_APP_HOST=${EXCHANGE_URL}
+      #- EXCH_ROOTPW=${EXCHANGE_ROOT_PW}
+      #- HZN_AGBOT_API=${AGBOT_URL}
+    depends_on:
+      exchange-api:
+        condition: service_healthy
+
+  exchange-api:
+    image:  openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
+    container_name: exchange-api
+    ports:
+      - ${EXCHANGE_PORT}:8080
+    networks: horizonnet
+    volumes:
+      - ${PWD}/exchange.json:/etc/horizon/exchange/config.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: test $(curl -sS -w "%{http_code}" -o /dev/null http://localhost:8080/v1/admin/version) == 201
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  postgres:
+    image: postgres:${POSTGRES_IMAGE_TAG}
+    container_name: postgres
+    restart: always
+    volumes:
+      - exchangedb:/var/lib/postgresql/data
+    networks: horizonnet
+    environment:
+      - POSTGRES_DB=${EXCHANGE_DATABASE}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER}
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  css-api:
+    image: openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
+    container_name: css-api
+    restart: always
+    ports:
+      - ${CSS_PORT}:${CSS_PORT}
+    networks: horizonnet
+    volumes:
+      - ${PWD}/css:/etc/edge-sync-service
+      - mongovol:/var/wiotp-edge/persist
+    environment:
+      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exhange-api:8080/v1
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:${MONGO_IMAGE_TAG}
+    container_name: mongo
+    restart: always
+    volumes:
+      - mongovol:/var/wiotp-edge/persist
+    networks: horizonnet

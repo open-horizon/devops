@@ -1,0 +1,48 @@
+{
+    "AgreementBot": {
+        "DBPath": "",
+        "Postgresql": {
+            "Host": "postgres",
+            "Port": "${POSTGRES_PORT}",
+            "User": "${POSTGRES_USER}",
+            "Password": "",
+            "DBName": "${AGBOT_DATABASE}",
+            "SSLMode": "disable",
+            "MaxOpenConnections": 20
+        },
+        "Partitions": "part0",
+        "TxLostDelayTolerationSeconds": 120,
+        "AgreementWorkers": 5,
+        "ProtocolTimeoutS": 120,
+        "AgreementTimeoutS": 360,
+        "NoDataIntervalS": 300,
+        "ActiveAgreementsURL": "",
+        "ActiveAgreementsUser": "",
+        "ActiveAgreementsPW": "",
+        "PolicyPath": "/home/agbotuser/policy.d",
+        "NewContractIntervalS": 10,
+        "ProcessGovernanceIntervalS": 10,
+        "IgnoreContractWithAttribs": "ethereum_account",
+        "ExchangeURL": "${HZN_TRANSPORT}://exhange-api:8080/v1",
+        "ExchangeId": "${EXCHANGE_SYSTEM_ORG}/${AGBOT_ID}",
+        "ExchangeToken":"${AGBOT_TOKEN}",
+        "ExchangeVersionCheckIntervalM": 1,
+        "ExchangeHeartbeat": 10,
+        "ExchangeMessageTTL": 1800,
+        "ActiveDeviceTimeoutS": 180,
+        "DefaultWorkloadPW": "",
+        "MessageKeyPath": "msgKey",
+        "APIListen": "0.0.0.0:${AGBOT_PORT}",
+        "PurgeArchivedAgreementHours": 1,
+        "CheckUpdatedPolicyS": 15,
+        "CSSURL": "${HZN_TRANSPORT}://css-api:${CSS_PORT}",
+        "SecureAPIListenHost": "0.0.0.0",
+        "SecureAPIListenPort": "8083",
+        "AgreementBatchSize": 1300
+    },
+    "ArchSynonyms": {
+        "x86_64": "amd64",
+        "armhf": "arm",
+        "aarch64": "arm64"
+    }
+}

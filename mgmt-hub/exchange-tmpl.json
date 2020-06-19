@@ -1,0 +1,15 @@
+{
+  "api": {
+    "db": {
+      "jdbcUrl": "jdbc:postgresql://postgres:${POSTGRES_PORT}/${EXCHANGE_DATABASE}",
+      "user": "${POSTGRES_USER}",
+      "password": ""
+    },
+    "logging": {
+      "level": "${EXCHANGE_LOG_LEVEL}"
+    },
+    "root": {
+      "password": "${EXCHANGE_ROOT_PW_BCRYPTED}"
+    }
+  }
+}
