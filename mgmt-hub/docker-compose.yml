@@ -31,6 +31,11 @@ services:
     depends_on:
       exchange-api:
         condition: service_healthy
+    healthcheck:
+      test: test $$(curl -sS -w "%{http_code}" -o /dev/null http://localhost:${AGBOT_PORT}/status) == 200
+      interval: 2s
+      timeout: 2s
+      retries: 10
 
   exchange-api:
     image:  openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
@@ -44,7 +49,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: test $(curl -sS -w "%{http_code}" -o /dev/null http://localhost:8080/v1/admin/version) == 201
+      test: test $$(curl -sS -w "%{http_code}" -o /dev/null http://localhost:8080/v1/admin/version) == 200
       interval: 2s
       timeout: 2s
       retries: 10
@@ -66,6 +71,8 @@ services:
       timeout: 2s
       retries: 10
 
+x-disabled:
+
   css-api:
     image: openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
     container_name: css-api
@@ -74,13 +81,18 @@ services:
       - ${CSS_PORT}:${CSS_PORT}
     networks: horizonnet
     volumes:
-      - ${PWD}/css:/etc/edge-sync-service
+      - ${PWD}/css.conf:/etc/edge-sync-service/sync.conf
       - mongovol:/var/wiotp-edge/persist
     environment:
       - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exhange-api:8080/v1
     depends_on:
       mongo:
         condition: service_healthy
+    healthcheck:
+      test: test $$(curl -sS -w "%{http_code}" -o /dev/null http://localhost:${CSS_PORT}/v1/health) == 200
+      interval: 2s
+      timeout: 2s
+      retries: 10
 
   mongo:
     image: mongo:${MONGO_IMAGE_TAG}
@@ -89,3 +101,8 @@ services:
     volumes:
       - mongovol:/var/wiotp-edge/persist
     networks: horizonnet
+    healthcheck:
+      test: test $$(echo 'db.runCommand("ping").ok' | mongo localhost:${MONGO_PORT}/test --quiet) == 1
+      interval: 2s
+      timeout: 2s
+      retries: 10
