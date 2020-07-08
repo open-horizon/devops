@@ -77,12 +77,13 @@ HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
 usage() {
     exitCode=${1:-0}
     cat << EndOfMessage
-Usage: ${0##*/} [-h]
+Usage: ${0##*/} [-h] [-s | -r <container>]
 
 Deploys the Open Horizon management hub components, agent, and CLI on this host.
 
 Flags:
   -s    Shut down the management hub components (instead of starting them). This is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
+  -r <container>   Have docker-compose restart the specified container.
   -h    Show this usage.
 
 Optional Environment Variables:
@@ -189,11 +190,13 @@ getPrivateIp() {
 }
 
 # Parse cmd line
-while getopts ":hs" opt; do
+while getopts ":r:hs" opt; do
 	case $opt in
 		h)  usage
 		    ;;
 		s)  STOP=true
+		    ;;
+		r)  RESTART="$OPTARG"
 		    ;;
 		\?) echo "Error: invalid option: -$OPTARG"; usage 1
 		    ;;
@@ -204,9 +207,17 @@ done
 
 # Special case: the want to bring down the mgmt hub
 # Note: we need to provide this because the env vars reference in docker-compose.yml need to be set
+if [[ "$STOP" == 'true' && -n "$RESTART" ]]; then
+    fatal 1 "can not specify both -s and -r"
+fi
 if [[ "$STOP" == 'true' ]]; then
     echo "Stopping Horizon management hub components..."
     docker-compose down
+    exit
+fi
+if [[ -n "$RESTART" ]]; then
+    echo "Restarting the $RESTART container..."
+    docker-compose restart -t 10 "$RESTART"
     exit
 fi
 
@@ -227,7 +238,7 @@ fi
 echo "Manaagement hub components will listen on $HZN_LISTEN_IP"
 
 # Install jq envsubst (gettext-base) docker docker-compose
-apt-get install -y -q jq gettext-base docker-compose
+apt-get install -y -q jq gettext-base make docker-compose
 chk $? 'installing required software'
 
 # Download and process templates from open-horizon/devops
@@ -342,11 +353,33 @@ systemctl restart horizon.service
 chk $? 'restarting agent'
 
 # Prime exchange with horizon examples
+echo "----------- Creating developer key pair, and installing Horizon example services, policies, and patterns..."
+export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
+export HZN_EXCHANGE_URL
+export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
+export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
+if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/service.public.pem" ]]; then
+    hzn key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
+    chk $? 'creating developer key pair'
+fi
+rm -rf /tmp/open-horizon/examples   # exchangePublishScript.sh will clone the examples repo to here
+curl -sSL https://raw.githubusercontent.com/open-horizon/examples/master/tools/exchangePublishScript.sh | bash -s -- -c $EXCHANGE_USER_ORG
+chk $? 'publishing examples'
+unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID   # need to set them differently for the registration below
 
 # Register the agent
+echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
+getUrlFile https://raw.githubusercontent.com/open-horizon/examples/master/edge/services/helloworld/horizon/node.policy.json node.policy.json
+# if they previously registered, then unregister
+if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
+    hzn unregister -f
+chk $? 'unregistration'
+fi
+hzn register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG
+chk $? 'registration'
 
-
-echo "----------- Summary of what was done:"
+# Summarize
+echo -e "\n----------- Summary of what was done:"
 echo "  1. Started Horizon management hub components: agbot, exchange, postgres DB, CSS, mongo DB"
 echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
 if [[ $EXCHANGE_ROOT_PW_GENERATED == 'true' ]]; then
@@ -368,3 +401,6 @@ if [[ $HZN_DEVICE_TOKEN_GENERATED == 'true' ]]; then
     echo "     - Node generated token: $HZN_DEVICE_TOKEN"
 fi
 echo "  3. Installed the Horizon agent and CLI (hzn)"
+echo "  4. Installed the Horizon examples"
+echo "  5. Created and registered an edge node to run the helloworld example edge service"
+echo "For what to do next, see: https://github.com/open-horizon/devops/blob/master/mgmt-hub/README.md#all-in-1-what-next"
