@@ -9,7 +9,7 @@
       "level": "${EXCHANGE_LOG_LEVEL}"
     },
     "root": {
-      "password": "${EXCHANGE_ROOT_PW_BCRYPTED}"
+      "password": "${ENVSUBST_DOLLAR_SIGN}EXCHANGE_ROOT_PW_BCRYPTED"
     }
   }
 }

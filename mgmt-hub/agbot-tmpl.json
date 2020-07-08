@@ -23,7 +23,7 @@
         "NewContractIntervalS": 10,
         "ProcessGovernanceIntervalS": 10,
         "IgnoreContractWithAttribs": "ethereum_account",
-        "ExchangeURL": "${HZN_TRANSPORT}://exhange-api:8080/v1",
+        "ExchangeURL": "${HZN_TRANSPORT}://exchange-api:8080/v1",
         "ExchangeId": "${EXCHANGE_SYSTEM_ORG}/${AGBOT_ID}",
         "ExchangeToken":"${AGBOT_TOKEN}",
         "ExchangeVersionCheckIntervalM": 1,
