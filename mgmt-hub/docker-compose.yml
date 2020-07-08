@@ -1,7 +1,8 @@
-version: '3'
+version: "3"
 
+# Listing the volumes here makes them persistent across container restarts
 volumes:
-  exchangedb:
+  postgresvol:
   mongovol:
 
 networks:
@@ -13,65 +14,65 @@ services:
   agbot:
     image: openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
     container_name: agbot
-    privileged: true
-    networks: horizonnet
     restart: always
     ports:
       - ${AGBOT_PORT}:${AGBOT_PORT}
+    networks:
+      - horizonnet
     volumes:
-      - ${PWD}/agbot.json:/etc/horizon/anax.json
+      - /etc/horizon/agbot.json:/etc/horizon/anax.json.tmpl
     environment:
       - HZN_VAR_BASE=/home/agbotuser
-      - HZN_DISABLE_IPTABLES_MANIPULATION=true
-      #- AGBOT_NAME=${AGBOT_ID}
-      #- CSS_URL=${CSS_URL}
-      #- EXCH_APP_HOST=${EXCHANGE_URL}
-      #- EXCH_ROOTPW=${EXCHANGE_ROOT_PW}
-      #- HZN_AGBOT_API=${AGBOT_URL}
-    depends_on:
-      exchange-api:
-        condition: service_healthy
     healthcheck:
-      test: test $$(curl -sS -w "%{http_code}" -o /dev/null http://localhost:${AGBOT_PORT}/status) == 200
-      interval: 2s
-      timeout: 2s
-      retries: 10
+      # Need to wait a while for this, because the deployment script does not add the org, user, agbot until after the containers are up
+      test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:${AGBOT_PORT}/status) -eq 200
+      interval: 20s
+      timeout: 5s
+      retries: 4
+    depends_on:
+      - exchange-api
+      - css-api
+      - postgres
 
   exchange-api:
     image:  openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
     container_name: exchange-api
+    restart: always
     ports:
       - ${EXCHANGE_PORT}:8080
-    networks: horizonnet
+    networks:
+      - horizonnet
+    environment:
+      # need to leave this as a variable in the config file because otherwise the $ in the pw value gets interpreted as an env var
+      - EXCHANGE_ROOT_PW_BCRYPTED=$EXCHANGE_ROOT_PW_BCRYPTED
     volumes:
-      - ${PWD}/exchange.json:/etc/horizon/exchange/config.json
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - /etc/horizon/exchange.json:/etc/horizon/exchange/exchange-api.tmpl:ro
+    # Note: compose version 3 does this health check forever, so do not do it very often. Plus it is no longer a condition for starting services dependent on it.
     healthcheck:
-      test: test $$(curl -sS -w "%{http_code}" -o /dev/null http://localhost:8080/v1/admin/version) == 200
-      interval: 2s
-      timeout: 2s
-      retries: 10
+      test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/v1/admin/version) -eq 200
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - postgres
 
   postgres:
     image: postgres:${POSTGRES_IMAGE_TAG}
     container_name: postgres
     restart: always
     volumes:
-      - exchangedb:/var/lib/postgresql/data
-    networks: horizonnet
+      - postgresvol:/var/lib/postgresql/data
+    networks:
+      - horizonnet
     environment:
       - POSTGRES_DB=${EXCHANGE_DATABASE}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_HOST_AUTH_METHOD=trust
     healthcheck:
       test: pg_isready -U ${POSTGRES_USER}
-      interval: 2s
-      timeout: 2s
-      retries: 10
-
-x-disabled:
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   css-api:
     image: openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
@@ -79,30 +80,33 @@ x-disabled:
     restart: always
     ports:
       - ${CSS_PORT}:${CSS_PORT}
-    networks: horizonnet
+    networks:
+      - horizonnet
     volumes:
-      - ${PWD}/css.conf:/etc/edge-sync-service/sync.conf
-      - mongovol:/var/wiotp-edge/persist
+      - /etc/horizon/css.conf:/etc/edge-sync-service/sync.conf.tmpl
+      #todo: why is this needed in this container?
+      - mongovol:/var/edge-sync-service/persist
     environment:
-      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exhange-api:8080/v1
-    depends_on:
-      mongo:
-        condition: service_healthy
+      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
     healthcheck:
-      test: test $$(curl -sS -w "%{http_code}" -o /dev/null http://localhost:${CSS_PORT}/v1/health) == 200
-      interval: 2s
-      timeout: 2s
-      retries: 10
+      test: test $$(curl -sS -w %{http_code} -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null http://localhost:${CSS_PORT}/api/v1/health) -eq 200
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - exchange-api
+      - mongo
 
   mongo:
     image: mongo:${MONGO_IMAGE_TAG}
     container_name: mongo
     restart: always
+    networks:
+      - horizonnet
     volumes:
-      - mongovol:/var/wiotp-edge/persist
-    networks: horizonnet
+      - mongovol:/var/edge-sync-service/persist
     healthcheck:
-      test: test $$(echo 'db.runCommand("ping").ok' | mongo localhost:${MONGO_PORT}/test --quiet) == 1
-      interval: 2s
-      timeout: 2s
-      retries: 10
+      test: echo show dbs | mongo localhost:${MONGO_PORT}/test --quiet
+      interval: 15s
+      timeout: 5s
+      retries: 3
