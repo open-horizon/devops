@@ -17,7 +17,7 @@ services:
     container_name: agbot
     restart: always
     ports:
-      - ${AGBOT_PORT}:${AGBOT_PORT}
+      - ${HZN_LISTEN_IP}:${AGBOT_PORT}:${AGBOT_PORT}
     networks:
       - horizonnet
     volumes:
@@ -43,7 +43,7 @@ services:
     container_name: exchange-api
     restart: always
     ports:
-      - ${EXCHANGE_PORT}:8080
+      - ${HZN_LISTEN_IP}:${EXCHANGE_PORT}:8080
     networks:
       - horizonnet
     environment:
@@ -83,7 +83,7 @@ services:
     container_name: css-api
     restart: always
     ports:
-      - ${CSS_PORT}:${CSS_PORT}
+      - ${HZN_LISTEN_IP}:${CSS_PORT}:${CSS_PORT}
     networks:
       - horizonnet
     volumes:

@@ -9,7 +9,7 @@ Note: before deploying Horizon, you can set the passwords that should be used if
 Deploy the Horizon components on your current host (currently **only Ubuntu 18.04** is supported for this method of deployment):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash -
+curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
 ```
 
 ### <a id=all-in-1-what-next></a> What To Do Next

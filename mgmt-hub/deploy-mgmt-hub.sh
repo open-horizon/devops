@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Deploy the management hub components (agbot, exchange, css, postgre, mongo), the agent, and the CLI
+# Deploy the management hub services (agbot, exchange, css, postgre, mongo), the agent, and the CLI
 
 generateToken() {
     cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w $1 | head -n 1
@@ -42,7 +42,7 @@ if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     HZN_DEVICE_TOKEN_GENERATED=true
 fi
 
-#HZN_LISTEN_IP   # the host IP address the hub components should listen on. Can be set to 0.0.0.0 to mean all interfaces. Defaults to the private IP address
+export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP, altho this is not recommended, since the services use http.
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
 
 export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -78,12 +78,13 @@ HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
 usage() {
     exitCode=${1:-0}
     cat << EndOfMessage
-Usage: ${0##*/} [-h] [-v] [-s | -r <container>]
+Usage: ${0##*/} [-h] [-v] [-s | -r <container>] [-p]
 
-Deploys the Open Horizon management hub components, agent, and CLI on this host.
+Deploys the Open Horizon management hub services, agent, and CLI on this host.
 
 Flags:
-  -s    Shut down the management hub components (instead of starting them). This is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
+  -s    Shut down the management hub services (instead of starting them). This is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
+  -p    Purge (delete) the persistent volumes of the Horizon services. Can only be used with -s.
   -r <container>   Have docker-compose restart the specified container.
   -v    Verbose output.
   -h    Show this usage.
@@ -102,7 +103,7 @@ HZN_EXCHANGE_URL=http://localhost:$EXCHANGE_PORT/v1
 
 # Only echo this if VERBOSE is 1 or true
 verbose() {
-    if [[ "$VERBOSE" == "1" || "$VERBOSE" == "true" ]]; then
+    if [[ "$VERBOSE" == '1' || "$VERBOSE" == 'true' ]]; then
         echo 'verbose:' $*
     fi
 }
@@ -150,6 +151,21 @@ chkHttp() {
     fi
 }
 
+# Run a command that does not have a good quiet option, so we have to capture the output and only show if an error occurs
+runCmdQuietly() {
+    # all of the args to this function are the cmd and its args
+    if [[  "$VERBOSE" == '1' || "$VERBOSE" == 'true' ]]; then
+        $*
+        chk $? "running: $*"
+    else
+        output=$($* 2>&1)
+        if [[ $? -ne 0 ]]; then
+            echo "Error running $*: $output"
+            exit 2
+        fi
+    fi
+}
+
 # Returns exit code 0 if the specified cmd is in the path
 isCmdInstalled() {
     local cmd=$1
@@ -187,9 +203,8 @@ getUrlFile() {
     fi
 }
 
-getPrivateIp() {
-    ip address | grep -m 1 -o -E " inet (172|10|192.168)[^/]*" | awk '{ print $2 }'
-}
+# Find 1 of the private IPs of the host. Currently not used.
+getPrivateIp() { ip address | grep -m 1 -o -E " inet (172|10|192.168)[^/]*" | awk '{ print $2 }'; }
 
 # Parse cmd line
 while getopts ":r:hs" opt; do
@@ -199,6 +214,8 @@ while getopts ":r:hs" opt; do
 		v)  VERBOSE=true
 		    ;;
 		s)  STOP=true
+		    ;;
+		p)  PURGE=true
 		    ;;
 		r)  RESTART="$OPTARG"
 		    ;;
@@ -214,9 +231,18 @@ done
 if [[ "$STOP" == 'true' && -n "$RESTART" ]]; then
     fatal 1 "can not specify both -s and -r"
 fi
+if [[ "$PURGE" == 'true' && "$STOP" != 'true' ]]; then
+    fatal 1 "-p can only be used with -s"
+fi
 if [[ "$STOP" == 'true' ]]; then
-    echo "Stopping Horizon management hub components..."
+    echo "Stopping the Horizon agent..."
+    systemctl stop horizon
+    echo "Stopping Horizon management hub services..."
     docker-compose down
+    if [[ "$PURGE" == 'true' ]]; then
+        echo "Deleting Horizon services persistent volumes..."
+        docker volume rm hzn_agbotmsgkeyvol hzn_mongovol hzn_postgresvol
+    fi
     exit
 fi
 if [[ -n "$RESTART" ]]; then
@@ -226,27 +252,26 @@ if [[ -n "$RESTART" ]]; then
 fi
 
 # Initial checking of the input and OS
-echo "----------- Checking input and the host OS..."
+echo "----------- Verifying input and the host OS..."
 if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
     fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
 fi
 ensureWeAreRoot
-confirmCmds grep awk curl
-
-# Get private IP to listen on, if they did not specify it otherwise
-if [[ -z $HZN_LISTEN_IP ]]; then
-    export HZN_LISTEN_IP=$(getPrivateIp)
-    chk $? 'getting private IP'
-    if [[ -z $HZN_LISTEN_IP ]]; then fatal 2 "Could not get the private IP address"; fi
+distro=$(lsb_release -d)   # this value is like: Description:	Ubuntu 18.04.4 LTS
+if [[ "$distro" != *'Ubuntu 18.'* ]]; then
+    fatal 1 "the host distro must be Ubuntu 18.x"
 fi
-echo "Manaagement hub components will listen on $HZN_LISTEN_IP"
+confirmCmds grep awk curl
+echo "Manaagement hub services will listen on $HZN_LISTEN_IP"
 
 # Install jq envsubst (gettext-base) docker docker-compose
-apt-get install -y -q jq gettext-base make docker-compose
-chk $? 'installing required software'
+echo "Updating apt package index..."
+runCmdQuietly apt-get update -q
+echo "Installing prerequisites, this could take a minute..."
+runCmdQuietly apt-get install -yqf jq gettext-base make docker-compose
 
 # Download and process templates from open-horizon/devops
-if [[ $OH_DEVOPS_REPO == 'dontdownload' ]]; then   #todo: remove this option
+if [[ $OH_DEVOPS_REPO == 'dontdownload' ]]; then
     echo "Skipping download of template files..."
 else
     echo "----------- Downloading template files..."
@@ -263,8 +288,22 @@ cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
 
-# Start mgmt hub components
-echo "----------- Starting Horizon management hub components..."
+# Start mgmt hub services
+echo "----------- Downloading/starting Horizon management hub services..."
+echo "Downloading management hub docker images..."
+# Even though docker-compose will pull these, it won't pull again if it already has a local copy of the 'latest' tag but it has been updated on docker hub
+echo "Pulling openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}..."
+runCmdQuietly docker pull openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
+echo "Pulling openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}..."
+runCmdQuietly docker pull openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
+echo "Pulling openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}..."
+runCmdQuietly docker pull openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
+echo "Pulling postgres:${POSTGRES_IMAGE_TAG}..."
+runCmdQuietly docker pull postgres:${POSTGRES_IMAGE_TAG}
+echo "Pulling mongo:${MONGO_IMAGE_TAG}..."
+runCmdQuietly docker pull mongo:${MONGO_IMAGE_TAG}
+
+echo "Starting management hub containers..."
 docker-compose up -d --no-build
 chk $? 'starting docker-compose services'
 
@@ -304,6 +343,7 @@ fi
 echo "----------- Creating the user org, the admin user in both orgs, and an agbot in the exchange..."
 
 # Create admin user in system org
+echo "Creating exchange admin user and agbot in the system org..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"password\":\"$EXCHANGE_SYSTEM_ADMIN_PW\",\"admin\":true,\"email\":\"not@used\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE
@@ -324,6 +364,7 @@ httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"busin
 chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols" $CURL_ERROR_FILE
 
 # Create the user org and an admin user within it
+echo "Creating exchange user org and admin user..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"label\":\"$EXCHANGE_USER_ORG\",\"description\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG" $CURL_ERROR_FILE
@@ -339,15 +380,17 @@ fi
 
 # Install agent and CLI (CLI is needed for exchangePublish.sh in next step)
 echo "----------- Downloading/installing Horizon agent and CLI..."
+echo "Downloading the Horizon agent and CLI packages..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
 getUrlFile $OH_DEVOPS_RELEASES/ubuntu.bionic.amd64.assets.tar.gz $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz
 tar -zxf $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.ubuntu.bionic.amd64.assets/horizon-cli_2.26.12~ppa~ubuntu.bionic_amd64.deb
 chk $? 'extracting pkg tar file'
-apt-get install -y -q $TMP_DIR/pkgs/*.ubuntu.bionic.amd64.assets/*horizon*~ppa~ubuntu.bionic_*.deb
-chk $? 'installing horizon pkgs'
+echo "Installing the Horizon agent and CLI packages..."
+runCmdQuietly apt-get install -yqf $TMP_DIR/pkgs/*.ubuntu.bionic.amd64.assets/*horizon*~ppa~ubuntu.bionic_*.deb
 
 # Configure the agent/CLI
+echo "Configuring the Horizon agent and CLI..."
 cat << EOF > /etc/default/horizon
 HZN_EXCHANGE_URL=$HZN_EXCHANGE_URL
 HZN_FSS_CSSURL=http://localhost:${CSS_PORT}/
@@ -382,14 +425,14 @@ getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json n
 # if they previously registered, then unregister
 if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
     hzn unregister -f
-chk $? 'unregistration'
+    chk $? 'unregistration'
 fi
 hzn register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 100
 chk $? 'registration'
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
-echo "  1. Started Horizon management hub components: agbot, exchange, postgres DB, CSS, mongo DB"
+echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB"
 echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
 if [[ $EXCHANGE_ROOT_PW_GENERATED == 'true' ]]; then
     echo "     - Exchange root user generated password: $EXCHANGE_ROOT_PW"
@@ -403,13 +446,14 @@ fi
 if [[ $EXCHANGE_USER_ADMIN_PW_GENERATED == 'true' ]]; then
     echo "     - User org admin user generated password: $EXCHANGE_USER_ADMIN_PW"
 fi
-if [[ $EXCHANGE_ROOT_PW_GENERATED == 'true' || $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED == 'true' || $AGBOT_TOKEN_GENERATED == 'true' || $EXCHANGE_USER_ADMIN_PW_GENERATED == 'true' ]]; then
-    echo "     Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
-fi
 if [[ $HZN_DEVICE_TOKEN_GENERATED == 'true' ]]; then
     echo "     - Node generated token: $HZN_DEVICE_TOKEN"
 fi
+if [[ $EXCHANGE_ROOT_PW_GENERATED == 'true' || $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED == 'true' || $AGBOT_TOKEN_GENERATED == 'true' || $EXCHANGE_USER_ADMIN_PW_GENERATED == 'true' || $HZN_DEVICE_TOKEN_GENERATED == 'true' ]]; then
+    echo "     Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+fi
 echo "  3. Installed the Horizon agent and CLI (hzn)"
-echo "  4. Installed the Horizon examples"
-echo "  5. Created and registered an edge node to run the helloworld example edge service"
+echo "  4. Created a Horizon developer key pair"
+echo "  5. Installed the Horizon examples"
+echo "  6. Created and registered an edge node to run the helloworld example edge service"
 echo "For what to do next, see: https://github.com/open-horizon/devops/blob/master/mgmt-hub/README.md#all-in-1-what-next"
