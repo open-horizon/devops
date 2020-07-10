@@ -70,20 +70,22 @@ export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or
 export MONGO_PORT=${MONGO_PORT:-27017}
 
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
-OH_DEVOPS_RELEASES=${OH_DEVOPS_RELEASES:-https://github.com/open-horizon/devops/releases/latest/download}   #todo: change this to anax repo?
+OH_DEVOPS_RELEASES=${OH_DEVOPS_RELEASES:-https://github.com/open-horizon/devops/releases/latest/download}   #todo: change this to anax repo
+OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
 
 usage() {
     exitCode=${1:-0}
     cat << EndOfMessage
-Usage: ${0##*/} [-h] [-s | -r <container>]
+Usage: ${0##*/} [-h] [-v] [-s | -r <container>]
 
 Deploys the Open Horizon management hub components, agent, and CLI on this host.
 
 Flags:
   -s    Shut down the management hub components (instead of starting them). This is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
   -r <container>   Have docker-compose restart the specified container.
+  -v    Verbose output.
   -h    Show this usage.
 
 Optional Environment Variables:
@@ -174,7 +176,7 @@ ensureWeAreRoot() {
 getUrlFile() {
     local url="$1"
     local localFile="$2"
-    echo "Downloading $url ..."
+    verbose "Downloading $url ..."
     if [[ $url == *@* ]]; then
         # special case for development:
         scp $url $localFile
@@ -193,6 +195,8 @@ getPrivateIp() {
 while getopts ":r:hs" opt; do
 	case $opt in
 		h)  usage
+		    ;;
+		v)  VERBOSE=true
 		    ;;
 		s)  STOP=true
 		    ;;
@@ -333,7 +337,7 @@ else
     chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_USER_ORG/users/admin" $CURL_ERROR_FILE
 fi
 
-# Install agent and CLI (CLI is needed for exchangePublishScript.sh in next step)
+# Install agent and CLI (CLI is needed for exchangePublish.sh in next step)
 echo "----------- Downloading/installing Horizon agent and CLI..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
@@ -362,20 +366,25 @@ if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/servic
     hzn key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
     chk $? 'creating developer key pair'
 fi
-rm -rf /tmp/open-horizon/examples   # exchangePublishScript.sh will clone the examples repo to here
-curl -sSL https://raw.githubusercontent.com/open-horizon/examples/master/tools/exchangePublishScript.sh | bash -s -- -c $EXCHANGE_USER_ORG
+rm -rf /tmp/open-horizon/examples   # exchangePublish.sh will clone the examples repo to here
+curl -sSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_USER_ORG
 chk $? 'publishing examples'
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID   # need to set them differently for the registration below
 
+# Temporary fix: restart agbot now that the agbot definition in the exchange has been configured (issue https://github.com/open-horizon/anax/issues/1865)
+echo "Restarting the agbot container as a temporary work around..."
+docker-compose restart -t 10 agbot
+chk $? 'restarting agbot service'
+
 # Register the agent
 echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
-getUrlFile https://raw.githubusercontent.com/open-horizon/examples/master/edge/services/helloworld/horizon/node.policy.json node.policy.json
+getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
 # if they previously registered, then unregister
 if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
     hzn unregister -f
 chk $? 'unregistration'
 fi
-hzn register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG
+hzn register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 100
 chk $? 'registration'
 
 # Summarize
