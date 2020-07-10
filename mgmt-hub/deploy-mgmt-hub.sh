@@ -69,6 +69,8 @@ export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get
 export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
 
+export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
+
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
 OH_DEVOPS_RELEASES=${OH_DEVOPS_RELEASES:-https://github.com/open-horizon/devops/releases/latest/download}   #todo: change this to anax repo
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
@@ -207,7 +209,7 @@ getUrlFile() {
 getPrivateIp() { ip address | grep -m 1 -o -E " inet (172|10|192.168)[^/]*" | awk '{ print $2 }'; }
 
 # Parse cmd line
-while getopts ":r:hs" opt; do
+while getopts ":r:hsp" opt; do
 	case $opt in
 		h)  usage
 		    ;;
@@ -231,20 +233,30 @@ done
 if [[ "$STOP" == 'true' && -n "$RESTART" ]]; then
     fatal 1 "can not specify both -s and -r"
 fi
+
 if [[ "$PURGE" == 'true' && "$STOP" != 'true' ]]; then
     fatal 1 "-p can only be used with -s"
 fi
+
 if [[ "$STOP" == 'true' ]]; then
+    # Unregister if necessary
+    if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
+        hzn unregister -f
+        chk $? 'unregistration'
+    fi
     echo "Stopping the Horizon agent..."
     systemctl stop horizon
-    echo "Stopping Horizon management hub services..."
-    docker-compose down
+
     if [[ "$PURGE" == 'true' ]]; then
-        echo "Deleting Horizon services persistent volumes..."
-        docker volume rm hzn_agbotmsgkeyvol hzn_mongovol hzn_postgresvol
+        echo "Stopping Horizon management hub services and deleting their persistent volumes..."
+        purgeFlag='--volumes'
+    else
+        echo "Stopping Horizon management hub services..."
     fi
+    docker-compose down $purgeFlag
     exit
 fi
+
 if [[ -n "$RESTART" ]]; then
     echo "Restarting the $RESTART container..."
     docker-compose restart -t 10 "$RESTART"
