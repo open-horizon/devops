@@ -43,6 +43,23 @@ Then you can run these commands:
 - View your node: `hzn exchange node list`
 - View your user in your org: `hzn exchange user list`
 - Use the verbose flag to view the exchange REST APIs the `hzn` command calls, for example: `hzn exchange user list -v`
+- Create an MMS file:
+
+  ```bash
+  cat << EOF > mms-meta.json
+  {
+    "objectID": "mms-file",
+    "objectType": "stuff",
+    "destinationOrgID": "$HZN_ORG_ID",
+    "destinationType": "pattern-ibm.helloworld"
+  }
+  EOF
+  echo -e "foo\nbar" > mms-file
+  hzn mms object publish -m mms-meta.json -f mms-file
+  ```
+
+- View the meta-data of the file: `hzn mms object list -d`
+- Get the file: `hzn mms object download -t stuff -i mms-file -f mms-file.downloaded`
 
 You can view more resources in the Horizon org by changing the environment variables:
 
