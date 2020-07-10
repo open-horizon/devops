@@ -4,9 +4,12 @@
 
 This enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
 
-Note: before deploying Horizon, you can set the passwords that should be used if you want to have easy to remember passwords. (If you don't set them, random passwords will be generated and displayed to you.) See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) for all of the settings that can be customized.
+Run the following command to deploy the Horizon components on your current host.
 
-Deploy the Horizon components on your current host (currently **only Ubuntu 18.04** is supported for this method of deployment):
+**Notes:**
+
+- This is currently **only supported on Ubuntu 18.04**
+- The script can be run without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) for all of the variables supported.
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
