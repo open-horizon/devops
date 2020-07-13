@@ -8,8 +8,11 @@ Run the following command to deploy the Horizon components on your current host.
 
 **Notes:**
 
-- This is currently **only supported on Ubuntu 18.04**
+- This is currently **only supported on Ubuntu 18.04 and macOS**
 - The command below must be **run as root**. If you need to use **sudo** to become root, run `sudo -i`, and then run the command below as shown.
+- If running on **macOS**:
+  - You must [install docker](https://docs.docker.com/docker-for-mac/install) yourself before running this script.
+  - If you do not already have [brew](https://brew.sh/) installed, this script can not automatically install other prerequisites (you will have to install them yourself)
 - The script can be run without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) for all of the variables supported.
 
 ```bash

@@ -21,7 +21,7 @@ services:
     networks:
       - horizonnet
     volumes:
-      - /etc/horizon/agbot.json:/etc/horizon/anax.json.tmpl
+      - ${ETC}/horizon/agbot.json:/etc/horizon/anax.json.tmpl:${VOLUME_MODE}
       # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
       - agbotmsgkeyvol:/var/horizon/msgKey
     #environment:
@@ -50,7 +50,7 @@ services:
       # need to leave this as a variable in the config file because otherwise the $ in the pw value gets interpreted as an env var
       - EXCHANGE_ROOT_PW_BCRYPTED=$EXCHANGE_ROOT_PW_BCRYPTED
     volumes:
-      - /etc/horizon/exchange.json:/etc/horizon/exchange/exchange-api.tmpl:ro
+      - ${ETC}/horizon/exchange.json:/etc/horizon/exchange/exchange-api.tmpl:${VOLUME_MODE}
     # Note: compose version 3 does this health check forever, so do not do it very often. Plus it is no longer a condition for starting services dependent on it.
     healthcheck:
       test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/v1/admin/version) -eq 200
@@ -87,7 +87,7 @@ services:
     networks:
       - horizonnet
     volumes:
-      - /etc/horizon/css.conf:/etc/edge-sync-service/sync.conf.tmpl
+      - ${ETC}/horizon/css.conf:/etc/edge-sync-service/sync.conf.tmpl:${VOLUME_MODE}
       #todo: why is this needed in this container?
       - mongovol:/var/edge-sync-service/persist
     environment:
