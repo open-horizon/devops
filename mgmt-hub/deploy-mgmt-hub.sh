@@ -114,7 +114,7 @@ export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
 export HC_DOCKER_TAG=${HC_DOCKER_TAG:-testing}   # when using the anax-in-container agent
 
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
-OH_DEVOPS_RELEASES=${OH_DEVOPS_RELEASES:-https://github.com/open-horizon/devops/releases/latest/download}   #todo: change this to anax repo
+OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releases/latest/download}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
@@ -504,7 +504,7 @@ echo "Downloading the Horizon agent and CLI packages..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
 if isMacOS; then
-    getUrlFile $OH_DEVOPS_RELEASES/macos.macos.amd64.assets.tar.gz $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz
+    getUrlFile $OH_ANAX_RELEASES/macos.macos.amd64.assets.tar.gz $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz
     tar -zxf $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.macos.macos.amd64.assets/horizon-cli-2.26.12.pkg
     chk $? 'extracting pkg tar file'
     echo "Installing the Horizon agent and CLI packages..."
@@ -513,7 +513,7 @@ if isMacOS; then
     chk $? 'installing macos horizon-cli pkg'
     # we will install the agent below, after configuring /etc/default/horizon
 else   # ubuntu
-    getUrlFile $OH_DEVOPS_RELEASES/ubuntu.bionic.amd64.assets.tar.gz $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz
+    getUrlFile $OH_ANAX_RELEASES/ubuntu.bionic.amd64.assets.tar.gz $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz
     tar -zxf $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.ubuntu.bionic.amd64.assets/horizon-cli_2.26.12~ppa~ubuntu.bionic_amd64.deb
     chk $? 'extracting pkg tar file'
     echo "Installing the Horizon agent and CLI packages..."
