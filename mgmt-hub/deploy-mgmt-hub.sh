@@ -1,12 +1,51 @@
 #!/bin/bash
 
-# Deploy the management hub services (agbot, exchange, css, postgre, mongo), the agent, and the CLI
+# Deploy the management hub services (agbot, exchange, css, postgre, mongo), the agent, and the CLI on the current host.
 
-generateToken() {
-    cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w $1 | head -n 1
+usage() {
+    exitCode=${1:-0}
+    cat << EndOfMessage
+Usage: ${0##*/} [-h] [-v] [-s | -S | -r <container>] [-P]
+
+Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently only supported on Ubuntu 18.04 and macOS (the macOS support is experimental).
+
+Flags:
+  -S    Stop the management hub services and agent (instead of starting them). This flagœ is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
+  -P    Purge (delete) the persistent volumes of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
+  -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
+  -r <container>   Have docker-compose restart the specified container.
+  -v    Verbose output.
+  -h    Show this usage.
+
+Optional Environment Variables:
+  For a list of optional environment variables, their defaults and descriptions, see the beginning of this script.
+EndOfMessage
+    exit $exitCode
 }
 
-# Default environment variables. Note: most of them have to be exported for envsubst for the template files.
+# Parse cmd line
+while getopts ":SPsr:vh" opt; do
+	case $opt in
+		S)  STOP=1
+		    ;;
+		P)  PURGE=1
+		    ;;
+		s)  START=1
+		    ;;
+		r)  RESTART="$OPTARG"
+		    ;;
+		v)  VERBOSE=1
+		    ;;
+		h)  usage
+		    ;;
+		\?) echo "Error: invalid option: -$OPTARG"; usage 1
+		    ;;
+		:)  echo "Error: option -$OPTARG requires an argument"; usage 1
+		    ;;
+	esac
+done
+
+# Default environment variables that can be overriddent. Note: most of them have to be exported for envsubst for the template files.
 
 # You have the option of specifying the exchange root pw: the clear value is only used in this script temporarily to prime the exchange.
 # The bcrypted value can be created using the /admin/hashpw API of an existing exhange. It is stored in the exchange config file, which
@@ -16,30 +55,31 @@ if [[ -z "$EXCHANGE_ROOT_PW" ]];then
         # Can't specify EXCHANGE_ROOT_PW_BCRYPTED while having use generate a random EXCHANGE_ROOT_PW, because they won't match
         fatal 1 "can not specify EXCHANGE_ROOT_PW_BCRYPTED without also specifying the equivalent EXCHANGE_ROOT_PW"
     fi
-    EXCHANGE_ROOT_PW_GENERATED=true
+    EXCHANGE_ROOT_PW_GENERATED=1
 fi
+generateToken() { cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w $1 | head -n 1; }
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
 export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must use the clear pw when they do not specify their own exch root pw
 
 # the password of the admin user in the system org. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_SYSTEM_ADMIN_PW" ]]; then
     export EXCHANGE_SYSTEM_ADMIN_PW=$(generateToken 30)
-    EXCHANGE_SYSTEM_ADMIN_PW_GENERATED=true
+    EXCHANGE_SYSTEM_ADMIN_PW_GENERATED=1
 fi
 # the system org agbot token. Defaults to a generated value that will be displayed at the end
 if [[ -z "$AGBOT_TOKEN" ]]; then
     export AGBOT_TOKEN=$(generateToken 30)
-    AGBOT_TOKEN_GENERATED=true
+    AGBOT_TOKEN_GENERATED=1
 fi
 # the password of the admin user in the user org. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_USER_ADMIN_PW" ]]; then
     export EXCHANGE_USER_ADMIN_PW=$(generateToken 30)
-    EXCHANGE_USER_ADMIN_PW_GENERATED=true
+    EXCHANGE_USER_ADMIN_PW_GENERATED=1
 fi
 # the node token. Defaults to a generated value that will be displayed at the end
 if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     export HZN_DEVICE_TOKEN=$(generateToken 30)
-    HZN_DEVICE_TOKEN_GENERATED=true
+    HZN_DEVICE_TOKEN_GENERATED=1
 fi
 
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP, altho this is not recommended, since the services use http.
@@ -71,37 +111,23 @@ export MONGO_PORT=${MONGO_PORT:-27017}
 
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
 
+export HC_DOCKER_TAG=${HC_DOCKER_TAG:-testing}   # when using the anax-in-container agent
+
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
-OH_DEVOPS_RELEASES=${OH_DEVOPS_RELEASES:-https://github.com/open-horizon/devops/releases/latest/download}   #todo: change this to anax repo
+OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releases/latest/download}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
 
-usage() {
-    exitCode=${1:-0}
-    cat << EndOfMessage
-Usage: ${0##*/} [-h] [-v] [-s | -r <container>] [-p]
-
-Deploys the Open Horizon management hub services, agent, and CLI on this host.
-
-Flags:
-  -s    Shut down the management hub services (instead of starting them). This is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
-  -p    Purge (delete) the persistent volumes of the Horizon services. Can only be used with -s.
-  -r <container>   Have docker-compose restart the specified container.
-  -v    Verbose output.
-  -h    Show this usage.
-
-Optional Environment Variables:
-  For a list of optional environment variables, their defaults and descriptions, see the beginning of this script.
-EndOfMessage
-    exit $exitCode
-}
-
+# Global variables for this script (not intended to be overridden)
 TMP_DIR=/tmp/horizon
 mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
-HZN_EXCHANGE_URL=http://localhost:$EXCHANGE_PORT/v1
+SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
+DISTRO=${DISTRO:-$(lsb_release -d 2>/dev/null | awk '{print $2" "$3}')}
+
+#====================== Functions ======================
 
 # Only echo this if VERBOSE is 1 or true
 verbose() {
@@ -153,6 +179,36 @@ chkHttp() {
     fi
 }
 
+isMacOS() {
+	if [[ "$SYSTEM_TYPE" == "Darwin" ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isUbuntu18() {
+    if [[ "$DISTRO" == 'Ubuntu 18.'* ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isDirInPath() {
+    local dir="$1"
+    echo $PATH | grep -q -E "(^|:)$dir(:|$)"
+}
+
+isDockerContainerRunning() {
+    local container="$1"
+    if [[ -n $(docker ps -q --filter name=$container) ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
 # Run a command that does not have a good quiet option, so we have to capture the output and only show if an error occurs
 runCmdQuietly() {
     # all of the args to this function are the cmd and its args
@@ -174,7 +230,17 @@ isCmdInstalled() {
     command -v $cmd >/dev/null 2>&1
 }
 
-# Verify that the prereq commands we need are installed
+# Returns exit code 0 if all of the specified cmds are in the path
+areCmdsInstalled() {
+    for c in $*; do
+        if ! isCmdInstalled $c; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+# Verify that the prereq commands we need are installed, or exist with error msg
 confirmCmds() {
     for c in $*; do
         #echo "checking $c..."
@@ -186,7 +252,7 @@ confirmCmds() {
 
 ensureWeAreRoot() {
     if [[ $(whoami) != 'root' ]]; then
-        fatal 2 "must be root to run ${0##*/} with these options."
+        fatal 2 "must be root to run ${0##*/}. Run 'sudo -i' and then run ${0##*/}"
     fi
 }
 
@@ -205,49 +271,55 @@ getUrlFile() {
     fi
 }
 
-# Find 1 of the private IPs of the host. Currently not used.
-getPrivateIp() { ip address | grep -m 1 -o -E " inet (172|10|192.168)[^/]*" | awk '{ print $2 }'; }
+# Find 1 of the private IPs of the host
+getPrivateIp() {
+    if isMacOS; then ipCmd=ifconfig
+    else ipCmd='ip address'; fi
+    $ipCmd | grep -m 1 -o -E "\sinet (172|10|192.168)[^/\s]*" | awk '{ print $2 }'
+}
 
-# Parse cmd line
-while getopts ":r:hsp" opt; do
-	case $opt in
-		h)  usage
-		    ;;
-		v)  VERBOSE=true
-		    ;;
-		s)  STOP=true
-		    ;;
-		p)  PURGE=true
-		    ;;
-		r)  RESTART="$OPTARG"
-		    ;;
-		\?) echo "Error: invalid option: -$OPTARG"; usage 1
-		    ;;
-		:)  echo "Error: option -$OPTARG requires an argument"; usage 1
-		    ;;
-	esac
-done
-
-# Special case: the want to bring down the mgmt hub
-# Note: we need to provide this because the env vars reference in docker-compose.yml need to be set
-if [[ "$STOP" == 'true' && -n "$RESTART" ]]; then
-    fatal 1 "can not specify both -s and -r"
+# Set distro-dependent variables
+if isMacOS; then
+    HZN=/usr/local/bin/hzn   # this is where the mac horizon-cli pkg puts it
+    export ETC=/private/etc
+    export VOLUME_MODE=cached   # supposedly helps avoid 100% cpu consumption bug https://github.com/docker/for-mac/issues/3499
+else   # ubuntu
+    HZN=hzn   # this deb horizon-cli pkg puts it in /usr/bin so it is always in the path
+    export ETC=/etc
+    export VOLUME_MODE=ro
 fi
 
-if [[ "$PURGE" == 'true' && "$STOP" != 'true' ]]; then
-    fatal 1 "-p can only be used with -s"
+#====================== Start/Stop Utilities ======================
+# Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
+
+# Check for invalid flag combinations
+if [[ $(( ${START:-0} + ${STOP:-0} )) -gt 1 ]]; then
+    fatal 1 "only 1 of these flags can be specified"
+fi
+if [[ -n "$PURGE" && -z "$STOP" ]]; then
+    fatal 1 "-p can only be used with -S"
 fi
 
-if [[ "$STOP" == 'true' ]]; then
+# Bring down the agent and the mgmt hub services
+if [[ -n "$STOP" ]]; then
     # Unregister if necessary
-    if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-        hzn unregister -f
+    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
+        $HZN unregister -f
         chk $? 'unregistration'
     fi
     echo "Stopping the Horizon agent..."
-    systemctl stop horizon
+    if isMacOS; then
+        /usr/local/bin/horizon-container stop
+        # we don't currently have a way to uninstall the horizon and horizon-cli mac pkgs
+    else   # ubuntu
+        systemctl stop horizon
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon agent..."
+            runCmdQuietly apt-get purge -yq bluehorizon horizon horizon-cli
+        fi
+    fi
 
-    if [[ "$PURGE" == 'true' ]]; then
+    if [[ -n "$PURGE" ]]; then
         echo "Stopping Horizon management hub services and deleting their persistent volumes..."
         purgeFlag='--volumes'
     else
@@ -257,11 +329,32 @@ if [[ "$STOP" == 'true' ]]; then
     exit
 fi
 
+# Start the mgmt hub services and agent (use existing configuration)
+if [[ -n "$START" ]]; then
+    echo "Starting management hub containers..."
+    docker-compose up -d --no-build
+    chk $? 'starting docker-compose services'
+
+    echo "Starting the Horizon agent..."
+    if isMacOS; then
+        /usr/local/bin/horizon-container start
+    else   # ubuntu
+        systemctl start horizon
+    fi
+    exit
+fi
+
+# Restart 1 mgmt hub container
 if [[ -n "$RESTART" ]]; then
+    if [[ $(( ${START:-0} + ${STOP:-0} )) -gt 0 ]]; then
+        fatal 1 "-s or -S can not be specified with -r"
+    fi
     echo "Restarting the $RESTART container..."
     docker-compose restart -t 10 "$RESTART"
     exit
 fi
+
+#====================== Main Deployment Code ======================
 
 # Initial checking of the input and OS
 echo "----------- Verifying input and the host OS..."
@@ -269,18 +362,32 @@ if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
     fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
 fi
 ensureWeAreRoot
-distro=$(lsb_release -d)   # this value is like: Description:	Ubuntu 18.04.4 LTS
-if [[ "$distro" != *'Ubuntu 18.'* ]]; then
-    fatal 1 "the host distro must be Ubuntu 18.x"
+if ! isMacOS && ! isUbuntu18; then
+    fatal 1 "the host must be Ubuntu 18.x or macOS"
 fi
-confirmCmds grep awk curl
+confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
 echo "Manaagement hub services will listen on $HZN_LISTEN_IP"
 
 # Install jq envsubst (gettext-base) docker docker-compose
-echo "Updating apt package index..."
-runCmdQuietly apt-get update -q
-echo "Installing prerequisites, this could take a minute..."
-runCmdQuietly apt-get install -yqf jq gettext-base make docker-compose
+if isMacOS; then
+    # we can't install docker* for them
+    if ! isCmdInstalled docker || ! isCmdInstalled docker-compose; then
+        fatal 2 "you must install docker before running this script: https://docs.docker.com/docker-for-mac/install"
+    fi
+    if ! areCmdsInstalled jq envsubst; then
+        if isCmdInstalled brew; then
+            echo "Installing prerequisites using brew, this could take a minute..."
+            runCmdQuietly brew install jq gettext
+        else
+            fatal 2 "the commands jq and envsubst are required, and since brew is not installed, we can not install them for you"
+        fi
+    fi
+else   # ubuntu
+    echo "Updating apt package index..."
+    runCmdQuietly apt-get update -q
+    echo "Installing prerequisites, this could take a minute..."
+    runCmdQuietly apt-get install -yqf jq gettext-base make docker-compose
+fi
 
 # Download and process templates from open-horizon/devops
 if [[ $OH_DEVOPS_REPO == 'dontdownload' ]]; then
@@ -321,6 +428,7 @@ chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
+HZN_EXCHANGE_URL=http://localhost:$EXCHANGE_PORT/v1
 exchangeGet() {
     curl -sS -w "%{http_code}" -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
@@ -395,40 +503,77 @@ echo "----------- Downloading/installing Horizon agent and CLI..."
 echo "Downloading the Horizon agent and CLI packages..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
-getUrlFile $OH_DEVOPS_RELEASES/ubuntu.bionic.amd64.assets.tar.gz $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz
-tar -zxf $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.ubuntu.bionic.amd64.assets/horizon-cli_2.26.12~ppa~ubuntu.bionic_amd64.deb
-chk $? 'extracting pkg tar file'
-echo "Installing the Horizon agent and CLI packages..."
-runCmdQuietly apt-get install -yqf $TMP_DIR/pkgs/*.ubuntu.bionic.amd64.assets/*horizon*~ppa~ubuntu.bionic_*.deb
+if isMacOS; then
+    getUrlFile $OH_ANAX_RELEASES/macos.macos.amd64.assets.tar.gz $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz
+    tar -zxf $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.macos.macos.amd64.assets/horizon-cli-2.26.12.pkg
+    chk $? 'extracting pkg tar file'
+    echo "Installing the Horizon agent and CLI packages..."
+    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $TMP_DIR/pkgs/*.macos.macos.amd64.assets/horizon-cli.crt
+    sudo installer -pkg $TMP_DIR/pkgs/*.macos.macos.amd64.assets/horizon-cli-2.26.12.pkg -target /
+    chk $? 'installing macos horizon-cli pkg'
+    # we will install the agent below, after configuring /etc/default/horizon
+else   # ubuntu
+    getUrlFile $OH_ANAX_RELEASES/ubuntu.bionic.amd64.assets.tar.gz $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz
+    tar -zxf $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.ubuntu.bionic.amd64.assets/horizon-cli_2.26.12~ppa~ubuntu.bionic_amd64.deb
+    chk $? 'extracting pkg tar file'
+    echo "Installing the Horizon agent and CLI packages..."
+    runCmdQuietly apt-get install -yqf $TMP_DIR/pkgs/*.ubuntu.bionic.amd64.assets/*horizon*~ppa~ubuntu.bionic_*.deb
+fi
 
 # Configure the agent/CLI
 echo "Configuring the Horizon agent and CLI..."
+if isMacOS; then
+    LOCALHOST=host.docker.internal  # so the agent in container can reach the host's localhost
+    if ! grep -q -E '^127.0.0.1\s+host.docker.internal(\s|$)' /etc/hosts; then
+        echo '127.0.0.1 host.docker.internal' >> /etc/hosts   # the hzn cmd needs to be able to use the same HZN_EXCHANGE_URL and resolve it
+    fi
+else   # ubuntu
+    LOCALHOST=localhost
+fi
+mkdir -p /etc/default
 cat << EOF > /etc/default/horizon
-HZN_EXCHANGE_URL=$HZN_EXCHANGE_URL
-HZN_FSS_CSSURL=http://localhost:${CSS_PORT}/
+HZN_EXCHANGE_URL=http://${LOCALHOST}:$EXCHANGE_PORT/v1
+HZN_FSS_CSSURL=http://${LOCALHOST}:$CSS_PORT/
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 EOF
-systemctl restart horizon.service
-chk $? 'restarting agent'
+
+unset HZN_EXCHANGE_URL   # use the value in /etc/default/horizon
+
+# start or restart the agent
+if isMacOS; then
+    if isDockerContainerRunning horizon1; then
+        echo "Restarting the Horizon agent container..."
+        /usr/local/bin/horizon-container update
+        chk $? 'restarting agent'
+    else
+        echo "Starting the Horizon agent container..."
+        /usr/local/bin/horizon-container start
+        chk $? 'starting agent'
+    fi
+else   # ubuntu
+    systemctl restart horizon.service
+    chk $? 'restarting agent'
+fi
 
 # Prime exchange with horizon examples
 echo "----------- Creating developer key pair, and installing Horizon example services, policies, and patterns..."
 export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
-export HZN_EXCHANGE_URL
 export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
 export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
+export HZN_EXCHANGE_URL=http://${LOCALHOST}:$EXCHANGE_PORT/v1
 if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/service.public.pem" ]]; then
-    hzn key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
+    $HZN key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
     chk $? 'creating developer key pair'
 fi
 rm -rf /tmp/open-horizon/examples   # exchangePublish.sh will clone the examples repo to here
 curl -sSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_USER_ORG
 chk $? 'publishing examples'
-unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID   # need to set them differently for the registration below
+unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
 # Temporary fixes: create pattern in user org, and restart agbot now that the agbot definition in the exchange has been configured (issues: https://github.com/open-horizon/anax/issues/1865 and https://github.com/open-horizon/anax/issues/1888)
-if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
-    httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
+exchangeUrl=http://localhost:$EXCHANGE_PORT/v1
+if [[ $(exchangeGet $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
+    httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE
 fi
 echo "Restarting the agbot container as a temporary work around..."
@@ -439,37 +584,40 @@ chk $? 'restarting agbot service'
 echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
 getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
 # if they previously registered, then unregister
-if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-    hzn unregister -f
+if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
+    $HZN unregister -f
     chk $? 'unregistration'
 fi
-hzn register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 100
+$HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 100
 chk $? 'registration'
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
 echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB"
 echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
-if [[ $EXCHANGE_ROOT_PW_GENERATED == 'true' ]]; then
+if [[ -n $EXCHANGE_ROOT_PW_GENERATED ]]; then
     echo "     - Exchange root user generated password: $EXCHANGE_ROOT_PW"
 fi
-if [[ $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED == 'true' ]]; then
+if [[ -n $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED ]]; then
     echo "     - System org admin user generated password: $EXCHANGE_SYSTEM_ADMIN_PW"
 fi
-if [[ $AGBOT_TOKEN_GENERATED == 'true' ]]; then
+if [[ -n $AGBOT_TOKEN_GENERATED ]]; then
     echo "     - Agbot generated token: $AGBOT_TOKEN"
 fi
-if [[ $EXCHANGE_USER_ADMIN_PW_GENERATED == 'true' ]]; then
+if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
     echo "     - User org admin user generated password: $EXCHANGE_USER_ADMIN_PW"
 fi
-if [[ $HZN_DEVICE_TOKEN_GENERATED == 'true' ]]; then
+if [[ -n $HZN_DEVICE_TOKEN_GENERATED ]]; then
     echo "     - Node generated token: $HZN_DEVICE_TOKEN"
 fi
-if [[ $EXCHANGE_ROOT_PW_GENERATED == 'true' || $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED == 'true' || $AGBOT_TOKEN_GENERATED == 'true' || $EXCHANGE_USER_ADMIN_PW_GENERATED == 'true' || $HZN_DEVICE_TOKEN_GENERATED == 'true' ]]; then
+if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "     Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
 fi
 echo "  3. Installed the Horizon agent and CLI (hzn)"
 echo "  4. Created a Horizon developer key pair"
 echo "  5. Installed the Horizon examples"
 echo "  6. Created and registered an edge node to run the helloworld example edge service"
+if isMacOS && ! isDirInPath '/usr/local/bin'; then
+    echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
+fi
 echo "For what to do next, see: https://github.com/open-horizon/devops/blob/master/mgmt-hub/README.md#all-in-1-what-next"
