@@ -398,6 +398,11 @@ else
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
+    # leave a copy of ourself in the current dir for subsequent stop/start commands
+    if [[ ! -f 'deploy-mgmt-hub.sh' ]]; then   # do not overwrite ourself if already here
+        getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
+        chmod +x deploy-mgmt-hub.sh
+    fi
 fi
 
 echo "Substituting environment variables into template files..."
