@@ -32,7 +32,6 @@ After the Horizon components have successfully deployed, here are some commands 
 - View the Horizon agent daemon status: `systemctl status horizon`
 - View the steps performed in the agreement negotiation process: `hzn eventlog list`
 - View the node policy that was set that caused the helloworld service to deployed: `hzn policy list`
-- Verify the policy matching that resulted in the helloworld service being deployed: `hzn deploycheck all`
 
 To view resources in the Horizon exchange, first export these environment variables:
 
@@ -48,6 +47,7 @@ Then you can run these commands:
 - View the example edge services: `hzn exchange service list IBM/`
 - View the example patterns: `hzn exchange pattern list IBM/`
 - View the example deployment policies: `hzn exchange deployment listpolicy`
+- Verify the policy matching that resulted in the helloworld service being deployed: `hzn deploycheck all -b policy-ibm.helloworld_1.0.0`
 - View your node: `hzn exchange node list`
 - View your user in your org: `hzn exchange user list`
 - Use the verbose flag to view the exchange REST APIs the `hzn` command calls, for example: `hzn exchange user list -v`
