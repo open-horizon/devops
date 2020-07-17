@@ -37,8 +37,8 @@ After the Horizon components have successfully deployed, here are some commands 
 To view resources in the Horizon exchange, first export these environment variables:
 
 ```bash
-HZN_ORG_ID=myorg   # or whatever org name you customized it to
-HZN_EXCHANGE_USER_AUTH=admin:<password>
+export HZN_ORG_ID=myorg   # or whatever org name you customized it to
+export HZN_EXCHANGE_USER_AUTH=admin:<password>
 ```
 
 Then you can run these commands:
