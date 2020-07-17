@@ -433,7 +433,7 @@ chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
-HZN_EXCHANGE_URL=http://localhost:$EXCHANGE_PORT/v1
+HZN_EXCHANGE_URL=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
 exchangeGet() {
     curl -sS -w "%{http_code}" -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
@@ -528,17 +528,21 @@ fi
 # Configure the agent/CLI
 echo "Configuring the Horizon agent and CLI..."
 if isMacOS; then
-    LOCALHOST=host.docker.internal  # so the agent in container can reach the host's localhost
-    if ! grep -q -E '^127.0.0.1\s+host.docker.internal(\s|$)' /etc/hosts; then
-        echo '127.0.0.1 host.docker.internal' >> /etc/hosts   # the hzn cmd needs to be able to use the same HZN_EXCHANGE_URL and resolve it
+    if [[ $HZN_LISTEN_IP == '127.0.0.1' || $HZN_LISTEN_IP == 'localhost' ]]; then
+        MODIFIED_LISTEN_IP=host.docker.internal  # so the agent in container can reach the host's localhost
+        if ! grep -q -E '^127.0.0.1\s+host.docker.internal(\s|$)' /etc/hosts; then
+            echo '127.0.0.1 host.docker.internal' >> /etc/hosts   # the hzn cmd needs to be able to use the same HZN_EXCHANGE_URL and resolve it
+        fi
+    else
+        MODIFIED_LISTEN_IP="$HZN_LISTEN_IP"
     fi
 else   # ubuntu
-    LOCALHOST=localhost
+    MODIFIED_LISTEN_IP="$HZN_LISTEN_IP"
 fi
 mkdir -p /etc/default
 cat << EOF > /etc/default/horizon
-HZN_EXCHANGE_URL=http://${LOCALHOST}:$EXCHANGE_PORT/v1
-HZN_FSS_CSSURL=http://${LOCALHOST}:$CSS_PORT/
+HZN_EXCHANGE_URL=http://${MODIFIED_LISTEN_IP}:$EXCHANGE_PORT/v1
+HZN_FSS_CSSURL=http://${MODIFIED_LISTEN_IP}:$CSS_PORT/
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 EOF
 
@@ -565,7 +569,7 @@ echo "----------- Creating developer key pair, and installing Horizon example se
 export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
 export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
 export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
-export HZN_EXCHANGE_URL=http://${LOCALHOST}:$EXCHANGE_PORT/v1
+export HZN_EXCHANGE_URL=http://${MODIFIED_LISTEN_IP}:$EXCHANGE_PORT/v1
 if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/service.public.pem" ]]; then
     $HZN key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
     chk $? 'creating developer key pair'
@@ -576,7 +580,7 @@ chk $? 'publishing examples'
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
 # Temporary fixes: create pattern in user org, and restart agbot now that the agbot definition in the exchange has been configured (issues: https://github.com/open-horizon/anax/issues/1865 and https://github.com/open-horizon/anax/issues/1888)
-exchangeUrl=http://localhost:$EXCHANGE_PORT/v1
+exchangeUrl=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
 if [[ $(exchangeGet $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE
