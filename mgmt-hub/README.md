@@ -72,8 +72,8 @@ Then you can run these commands:
 You can view more resources in the Horizon org by changing the environment variables:
 
 ```bash
-HZN_ORG_ID=IBM   # or whatever org name you customized it to
-HZN_EXCHANGE_USER_AUTH=admin:<password>
+export HZN_ORG_ID=IBM   # or whatever org name you customized it to
+export HZN_EXCHANGE_USER_AUTH=admin:<password>
 ```
 
 Then you can run these commands:
