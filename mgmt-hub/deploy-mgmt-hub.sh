@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Deploy the management hub services (agbot, exchange, css, postgre, mongo), the agent, and the CLI on the current host.
+# Deploy the management hub services (agbot, exchange, css, sdo, postgre, mongo), the agent, and the CLI on the current host.
 
 usage() {
     exitCode=${1:-0}
@@ -45,7 +45,7 @@ while getopts ":SPsr:vh" opt; do
 	esac
 done
 
-# Default environment variables that can be overriddent. Note: most of them have to be exported for envsubst for the template files.
+# Default environment variables that can be overridden. Note: most of them have to be exported for envsubst for the template files.
 
 # You have the option of specifying the exchange root pw: the clear value is only used in this script temporarily to prime the exchange.
 # The bcrypted value can be created using the /admin/hashpw API of an existing exhange. It is stored in the exchange config file, which
@@ -108,6 +108,18 @@ export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get
 
 export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
+
+export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-latest}   # or can be set to stable, testing, or a specific version
+export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-9008}
+export SDO_RV_PORT=${SDO_RV_PORT:-8040}
+export SDO_OPS_PORT=${SDO_OPS_PORT:-8042}   # the port OPS should listen on *inside* the container
+export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
+export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
+export AGENT_INSTALL_URL=${AGENT_INSTALL_URL:-https://github.com/open-horizon/anax/releases/latest/download/agent-install.sh}
+# Note: in this environment, we are not supporting letting them specify their own owner key pair
+
+export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-10}
+export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
 
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
 
@@ -238,6 +250,22 @@ areCmdsInstalled() {
         fi
     done
     return 0
+}
+
+# Checks if docker-compose is installed, and if so, if it is at least this minimum version
+isDockerComposeAtLeast() {
+    : ${1:?}
+    local minVersion=$1
+    if ! command -v docker-compose >/dev/null 2>&1; then
+        return 1   # it is not even installed
+    fi
+    # docker-compose is installed, check its version
+    lowerVersion=$(echo -e "$(docker-compose version --short)\n$minVersion" | sort -V | head -n1)
+    if [[ $lowerVersion == $minVersion ]]; then
+        return 0   # the installed version was >= minVersion
+    else
+        return 1
+    fi
 }
 
 # Verify that the prereq commands we need are installed, or exist with error msg
@@ -386,7 +414,34 @@ else   # ubuntu
     echo "Updating apt package index..."
     runCmdQuietly apt-get update -q
     echo "Installing prerequisites, this could take a minute..."
-    runCmdQuietly apt-get install -yqf jq gettext-base make docker-compose
+    runCmdQuietly apt-get install -yqf jq gettext-base make
+
+    # If docker isn't installed, do that
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "Docker is required, installing it..."
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+        chk $? 'adding docker repository key'
+        add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+        chk $? 'adding docker repository'
+        apt-get install -y docker-ce docker-ce-cli containerd.io
+        chk $? 'installing docker'
+    fi
+
+    minVersion=1.21.0
+    if ! isDockerComposeAtLeast $minVersion; then
+        if [[ -f '/usr/bin/docker-compose' ]]; then
+            echo "Error: Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
+            exit 2
+        fi
+        echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
+        # Install docker-compose from its github repo, because that is the only way to get a recent enough version
+        curl --progress-bar -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chk $? 'downloading docker-compose'
+        chmod +x /usr/local/bin/docker-compose
+        chk $? 'making docker-compose executable'
+        ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+        chk $? 'linking docker-compose to /usr/bin'
+    fi
 fi
 
 # Download and process templates from open-horizon/devops
@@ -403,6 +458,8 @@ else
         getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
         chmod +x deploy-mgmt-hub.sh
     fi
+    # also leave a copy of test-sdo.sh so they can run that afterward if they want to give SDO a spin
+    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
 fi
 
 echo "Substituting environment variables into template files..."
@@ -426,6 +483,8 @@ echo "Pulling postgres:${POSTGRES_IMAGE_TAG}..."
 runCmdQuietly docker pull postgres:${POSTGRES_IMAGE_TAG}
 echo "Pulling mongo:${MONGO_IMAGE_TAG}..."
 runCmdQuietly docker pull mongo:${MONGO_IMAGE_TAG}
+echo "Pulling openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}..."
+runCmdQuietly docker pull openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}
 
 echo "Starting management hub containers..."
 docker-compose up -d --no-build
@@ -592,6 +651,22 @@ chk $? 'restarting agbot service'
 # Register the agent
 echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
 getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
+
+printf "Waiting for the agent to be ready"
+for ((i=1; i<=$AGENT_WAIT_ITERATIONS; i++)); do
+    if $HZN node list >/dev/null 2>$CURL_ERROR_FILE; then
+        success=true
+        break
+    fi
+    printf '.'
+    sleep $AGENT_WAIT_INTERVAL
+done
+echo ''
+if [[ "$success" != 'true' ]]; then
+    numSeconds=$(( $AGENT_WAIT_ITERATIONS * $AGENT_WAIT_INTERVAL ))
+    fatal 6 "can not reach the agent (tried for $numSeconds seconds): $(cat $CURL_ERROR_FILE 2>/dev/null)"
+fi
+
 # if they previously registered, then unregister
 if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
     $HZN unregister -f

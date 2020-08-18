@@ -8,7 +8,7 @@ Run the following command to deploy the Horizon components on your current host.
 
 **Notes:**
 
-- This is currently **only supported on Ubuntu 18.04 and macOS**
+- This is currently **only supported on Ubuntu 18.x and macOS**
 - The command below must be **run as root**. If you need to use **sudo** to become root, run `sudo -i`, and then run the command below as shown.
 - If running on **macOS**:
   - You must [install docker](https://docs.docker.com/docker-for-mac/install) yourself before running this script.
@@ -82,6 +82,31 @@ Then you can run these commands:
 - View the agbot: `hzn exchange agbot list`
 - View the deployment policies the is agbot serving: `hzn exchange agbot listdeploymentpol agbot`
 - View the patterns the is agbot serving: `hzn exchange agbot listpattern agbot`
+
+### <a id=try-sdo></a> Try Out SDO
+
+[Intel's SDO](https://software.intel.com/en-us/secure-device-onboard) (Secure Device Onboard) technology can configure an edge device and register it with a Horizon instance automatically. Although this is not really necessary in this all-in-1 environment, because the agent has already been registered, you can easily try out SDO to see it working. **Note:** SDO doesn't make sense on a Mac, so it is only supported in this all-in-1 environment on Ubuntu 18.x.
+
+Export these environment variables:
+
+```bash
+export HZN_ORG_ID=myorg   # or whatever org name you customized it to
+export HZN_EXCHANGE_USER_AUTH=admin:<password>
+```
+
+Run the SDO test script:
+
+```bash
+./test-sdo.sh
+```
+
+You will see the script do these steps:
+
+- Unregister the agent (so SDO can register it)
+- Verify the SDO management hub component is functioning properly
+- Configure this host as a simulated SDO-enabled device
+- Import the voucher of this device into the SDO management hub component
+- Simulate the booting of this device, which will verify the agent has already been installed, and then register it for the helloworld edge service example
 
 ### <a id=all-in-1-pause></a> "Pausing" The Services
 
