@@ -10,7 +10,7 @@ Usage: ${0##*/} [-h] [-v] [-s | -S | -r <container>] [-P]
 Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently only supported on Ubuntu 18.04 and macOS (the macOS support is experimental).
 
 Flags:
-  -S    Stop the management hub services and agent (instead of starting them). This flagœ is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
+  -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
   -P    Purge (delete) the persistent volumes of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
   -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
   -r <container>   Have docker-compose restart the specified container.
