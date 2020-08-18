@@ -394,7 +394,7 @@ if ! isMacOS && ! isUbuntu18; then
     fatal 1 "the host must be Ubuntu 18.x or macOS"
 fi
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
-echo "Manaagement hub services will listen on $HZN_LISTEN_IP"
+echo "Management hub services will listen on $HZN_LISTEN_IP"
 
 # Install jq envsubst (gettext-base) docker docker-compose
 if isMacOS; then
