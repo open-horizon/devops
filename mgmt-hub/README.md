@@ -33,12 +33,7 @@ After the Horizon components have successfully deployed, here are some commands 
 - View the steps performed in the agreement negotiation process: `hzn eventlog list`
 - View the node policy that was set that caused the helloworld service to deployed: `hzn policy list`
 
-To view resources in the Horizon exchange, first export these environment variables:
-
-```bash
-export HZN_ORG_ID=myorg   # or whatever org name you customized it to
-export HZN_EXCHANGE_USER_AUTH=admin:<password>
-```
+To view resources in the Horizon exchange, first export environment variables `HZN_ORG_ID` and `HZN_EXCHANGE_USER_AUTH` as instructed in the output of `deploy-mgmt-hub.sh`.
 
 Then you can run these commands:
 
