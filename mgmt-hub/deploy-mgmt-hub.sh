@@ -175,14 +175,18 @@ chkHttp() {
     local goodHttpCodes=$3   # space or comma separate list of acceptable http codes
     local task=$4
     local errorFile=$5   # optional: the file that has the curl error in it
-    local dontExit=$6   # optional: set to 'continue' to not exit for this error
+    local outputFile=$6   # optional: the file that has the curl output in it (which sometimes has the error in it)
+    local dontExit=$7   # optional: set to 'continue' to not exit for this error
+    if [[ -n $errorFile && -f $errorFile && $(wc -c $errorFile | awk '{print $1}') -gt 0 ]]; then
+        task="$task, stderr: $(cat $errorFile)"
+    fi
     chk $exitCode $task
     if [[ -n $httpCode && $goodHttpCodes == *$httpCode* ]]; then return; fi
-    if [[ -n $errorFile && -f $errorFile ]]; then
-        echo "Error: http code $httpCode from: $task: $(cat $errorFile)"
-    else
-        echo "Error: http code $httpCode from: $task"
+    # the httpCode was bad, normally in this case the api error msg is in the outputFile
+    if [[ -n $outputFile && -f $outputFile && $(wc -c $outputFile | awk '{print $1}') -gt 0 ]]; then
+        task="$task, stdout: $(cat $outputFile)"
     fi
+    echo "Error: http code $httpCode from: $task"
     if [[ $dontExit != 'continue' ]]; then
         if [[ ! "$httpCode" =~ ^[0-9]+$ ]]; then
             httpCode=5   # some times httpCode is the curl error msg
@@ -295,7 +299,7 @@ getUrlFile() {
         chk $? "scp'ing $url"
     else
         httpCode=$(curl -sS -w "%{http_code}" -L -o $localFile $url 2>$CURL_ERROR_FILE)
-        chkHttp $? $httpCode 200 "downloading $url" $CURL_ERROR_FILE
+        chkHttp $? $httpCode 200 "downloading $url" $CURL_ERROR_FILE $localFile
     fi
 }
 
@@ -460,6 +464,7 @@ else
     fi
     # also leave a copy of test-sdo.sh so they can run that afterward if they want to give SDO a spin
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
+    chmod +x test-sdo.sh
 fi
 
 echo "Substituting environment variables into template files..."
@@ -530,36 +535,36 @@ echo "----------- Creating the user org, the admin user in both orgs, and an agb
 echo "Creating exchange admin user and agbot in the system org..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"password\":\"$EXCHANGE_SYSTEM_ADMIN_PW\",\"admin\":true,\"email\":\"not@used\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin)
-    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE
+    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 else
     # Set the pw to be what they specified this time
     httpCode=$(exchangePost -d "{\"newPassword\":\"$EXCHANGE_SYSTEM_ADMIN_PW\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin/changepw)
-    chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE
+    chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 
 # Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs
 httpCode=$(exchangePut -d "{\"token\":\"$AGBOT_TOKEN\",\"name\":\"agbot\",\"publicKey\":\"\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot)
-chkHttp $? $httpCode 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot" $CURL_ERROR_FILE
+chkHttp $? $httpCode 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns)
-chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns" $CURL_ERROR_FILE
+chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_USER_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns)
-chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns" $CURL_ERROR_FILE
+chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"businessPol\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols)
-chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols" $CURL_ERROR_FILE
+chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 
 # Create the user org and an admin user within it
 echo "Creating exchange user org and admin user..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"label\":\"$EXCHANGE_USER_ORG\",\"description\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG)
-    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG" $CURL_ERROR_FILE
+    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG/users/admin) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"password\":\"$EXCHANGE_USER_ADMIN_PW\",\"admin\":true,\"email\":\"not@used\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG/users/admin)
-    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/users/admin" $CURL_ERROR_FILE
+    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 else
     # Set the pw to be what they specified this time
     httpCode=$(exchangePost -d "{\"newPassword\":\"$EXCHANGE_USER_ADMIN_PW\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG/users/admin/changepw)
-    chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_USER_ORG/users/admin" $CURL_ERROR_FILE
+    chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_USER_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 
 # Install agent and CLI (CLI is needed for exchangePublish.sh in next step)
@@ -642,7 +647,7 @@ unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them di
 exchangeUrl=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
 if [[ $(exchangeGet $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
-    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE
+    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 echo "Restarting the agbot container as a temporary work around..."
 docker-compose restart -t 10 agbot
@@ -704,4 +709,12 @@ echo "  6. Created and registered an edge node to run the helloworld example edg
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
 fi
-echo "For what to do next, see: https://github.com/open-horizon/devops/blob/master/mgmt-hub/README.md#all-in-1-what-next"
+echo -e "\nFor what to do next, see: https://github.com/open-horizon/devops/blob/master/mgmt-hub/README.md#all-in-1-what-next"
+if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
+    userAdminPw="$EXCHANGE_USER_ADMIN_PW"
+else
+    userAdminPw='<your-password>'   # if they specified a pw, do not reveal it
+fi
+echo "Before running the commands in the What To Do Next section, copy/paste/run these commands in your terminal:"
+echo " export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+echo " export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"

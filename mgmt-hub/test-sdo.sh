@@ -44,7 +44,7 @@ done
 export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
 export SDO_SAMPLE_MFG_KEEP_SVCS=${SDO_SAMPLE_MFG_KEEP_SVCS:-true}
 export SDO_MFG_IMAGE_TAG=${SDO_MFG_IMAGE_TAG:-latest}
-SDO_SUPPORT_REPO=${SDO_SUPPORT_REPO:-https://raw.githubusercontent.com/open-horizon/SDO-support/master}
+export SDO_SUPPORT_REPO=${SDO_SUPPORT_REPO:-https://raw.githubusercontent.com/open-horizon/SDO-support/master}
 
 CURL_OUTPUT_FILE=/tmp/horizon/curlExchangeOutput
 CURL_ERROR_FILE=/tmp/horizon/curlExchangeErrors
@@ -85,14 +85,18 @@ chkHttp() {
     local goodHttpCodes=$3   # space or comma separate list of acceptable http codes
     local task=$4
     local errorFile=$5   # optional: the file that has the curl error in it
-    local dontExit=$6   # optional: set to 'continue' to not exit for this error
+    local outputFile=$6   # optional: the file that has the curl output in it (which sometimes has the error in it)
+    local dontExit=$7   # optional: set to 'continue' to not exit for this error
+    if [[ -n $errorFile && -f $errorFile && $(wc -c $errorFile | awk '{print $1}') -gt 0 ]]; then
+        task="$task, stderr: $(cat $errorFile)"
+    fi
     chk $exitCode $task
     if [[ -n $httpCode && $goodHttpCodes == *$httpCode* ]]; then return; fi
-    if [[ -n $errorFile && -f $errorFile ]]; then
-        echo "Error: http code $httpCode from: $task: $(cat $errorFile)"
-    else
-        echo "Error: http code $httpCode from: $task"
+    # the httpCode was bad, normally in this case the api error msg is in the outputFile
+    if [[ -n $outputFile && -f $outputFile && $(wc -c $outputFile | awk '{print $1}') -gt 0 ]]; then
+        task="$task, stdout: $(cat $outputFile)"
     fi
+    echo "Error: http code $httpCode from: $task"
     if [[ $dontExit != 'continue' ]]; then
         if [[ ! "$httpCode" =~ ^[0-9]+$ ]]; then
             httpCode=5   # some times httpCode is the curl error msg
@@ -141,7 +145,7 @@ getUrlFile() {
         chk $? "scp'ing $url"
     else
         httpCode=$(curl -sS -w "%{http_code}" -L -o $localFile $url 2>$CURL_ERROR_FILE)
-        chkHttp $? $httpCode 200 "downloading $url" $CURL_ERROR_FILE
+        chkHttp $? $httpCode 200 "downloading $url" $CURL_ERROR_FILE $localFile
     fi
 }
 
@@ -171,17 +175,17 @@ fi
 
 echo -e "======================== Verifying the SDO management hub component is functioning..."
 httpCode=$(curl -sS -w "%{http_code}" -o $CURL_OUTPUT_FILE $HZN_SDO_SVC_URL/version 2>$CURL_ERROR_FILE)
-chkHttp $? $httpCode 200 "getting OCS-API version" $CURL_ERROR_FILE
+chkHttp $? $httpCode 200 "getting OCS-API version" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 echo "OCS-API version: $(cat $CURL_OUTPUT_FILE)"
 
 #todo: use hzn voucher list when that version of hzn is pushed to latest
 httpCode=$(curl -sS -w "%{http_code}" -u "$HZN_ORG_ID/$HZN_EXCHANGE_USER_AUTH" -o $CURL_OUTPUT_FILE $HZN_SDO_SVC_URL/vouchers 2>$CURL_ERROR_FILE)
-chkHttp $? $httpCode 200 "getting imported vouchers" $CURL_ERROR_FILE
+chkHttp $? $httpCode 200 "getting imported vouchers" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 echo "Imported vouchers (empty list is expected initially):"
 jq . $CURL_OUTPUT_FILE
 
 httpCode=$(curl -sS -w "%{http_code}" -X POST -o $CURL_OUTPUT_FILE $SDO_RV_URL/mp/113/msg/20 2>$CURL_ERROR_FILE)
-chkHttp $? $httpCode 200 "pinging rendezvous server" $CURL_ERROR_FILE
+chkHttp $? $httpCode 200 "pinging rendezvous server" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 echo "Ping response from rendezvous server:"
 jq . $CURL_OUTPUT_FILE
 
@@ -189,13 +193,13 @@ echo -e "\n======================== Configuring this host as a simulated SDO dev
 getUrlFile $SDO_SUPPORT_REPO/sample-mfg/simulate-mfg.sh simulate-mfg.sh
 chmod +x simulate-mfg.sh
 chk $? 'making simulate-mfg.sh executable'
-./simulate-mfg.sh   # the output of this is the voucher.json file
+./simulate-mfg.sh   # the output of this is the /var/sdo/voucher.json file
 chk $? 'running simulate-mfg.sh'
 
 echo -e "\n======================== Importing the device voucher..."
-hzn voucher import voucher.json --policy node.policy.json
+hzn voucher import /var/sdo/voucher.json --policy node.policy.json
 chk $? 'importing the voucher'
 
 echo -e "\n======================== Simulating booting the SDO device..."
-./owner-boot-device ibm.helloworld
+/usr/sdo/bin/owner-boot-device ibm.helloworld
 chk $? 'simulating booting the device'
