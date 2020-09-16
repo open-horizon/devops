@@ -127,6 +127,9 @@ export HC_DOCKER_TAG=${HC_DOCKER_TAG:-testing}   # when using the anax-in-contai
 
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
 OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releases/latest/download}
+OH_ANAX_MAC_PKG_TAR=${OH_ANAX_MAC_PKG_TAR:-horizon-agent-macos-x86_64.tar.gz}
+OH_ANAX_DEB_PKG_TAR=${OH_ANAX_DEB_PKG_TAR:-horizon-agent-deb-amd64.tar.gz}
+OH_ANAX_RPM_PKG_TAR=${OH_ANAX_RPM_PKG_TAR:-horizon-agent-rpm-x86_64.tar.gz}   # not used/supported yet
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
@@ -573,20 +576,20 @@ echo "Downloading the Horizon agent and CLI packages..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
 if isMacOS; then
-    getUrlFile $OH_ANAX_RELEASES/macos.macos.amd64.assets.tar.gz $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz
-    tar -zxf $TMP_DIR/pkgs/macos.macos.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.macos.macos.amd64.assets/horizon-cli-2.26.12.pkg
+    getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_MAC_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_MAC_PKG_TAR
+    tar -zxf $TMP_DIR/pkgs/$OH_ANAX_MAC_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli-2.27.0.pkg
     chk $? 'extracting pkg tar file'
-    echo "Installing the Horizon agent and CLI packages..."
-    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $TMP_DIR/pkgs/*.macos.macos.amd64.assets/horizon-cli.crt
-    sudo installer -pkg $TMP_DIR/pkgs/*.macos.macos.amd64.assets/horizon-cli-2.26.12.pkg -target /
+    echo "Installing the Horizon CLI package..."
+    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $TMP_DIR/pkgs/horizon-cli.crt
+    sudo installer -pkg $TMP_DIR/pkgs/horizon-cli-*.pkg -target /
     chk $? 'installing macos horizon-cli pkg'
     # we will install the agent below, after configuring /etc/default/horizon
 else   # ubuntu
-    getUrlFile $OH_ANAX_RELEASES/ubuntu.bionic.amd64.assets.tar.gz $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz
-    tar -zxf $TMP_DIR/pkgs/ubuntu.bionic.amd64.assets.tar.gz -C $TMP_DIR/pkgs   # will extract files like: v2.26.12.ubuntu.bionic.amd64.assets/horizon-cli_2.26.12~ppa~ubuntu.bionic_amd64.deb
+    getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_DEB_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR
+    tar -zxf $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.deb
     chk $? 'extracting pkg tar file'
     echo "Installing the Horizon agent and CLI packages..."
-    runCmdQuietly apt-get install -yqf $TMP_DIR/pkgs/*.ubuntu.bionic.amd64.assets/*horizon*~ppa~ubuntu.bionic_*.deb
+    runCmdQuietly apt-get install -yqf $TMP_DIR/pkgs/horizon*.deb
 fi
 
 # Configure the agent/CLI
@@ -713,7 +716,7 @@ echo -e "\nFor what to do next, see: https://github.com/open-horizon/devops/blob
 if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
     userAdminPw="$EXCHANGE_USER_ADMIN_PW"
 else
-    userAdminPw='<your-password>'   # if they specified a pw, do not reveal it
+    userAdminPw='$EXCHANGE_USER_ADMIN_PW'   # if they specified a pw, do not reveal it
 fi
 echo "Before running the commands in the What To Do Next section, copy/paste/run these commands in your terminal:"
 echo " export HZN_ORG_ID=$EXCHANGE_USER_ORG"
