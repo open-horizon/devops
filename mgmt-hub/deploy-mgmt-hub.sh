@@ -90,7 +90,7 @@ export EXCHANGE_PORT=${EXCHANGE_PORT:-3090}
 export EXCHANGE_LOG_LEVEL=${EXCHANGE_LOG_LEVEL:-INFO}
 export EXCHANGE_SYSTEM_ORG=${EXCHANGE_SYSTEM_ORG:-IBM}   # the name of the system org (which contains the example services and patterns). Currently this can not be overridden
 export EXCHANGE_USER_ORG=${EXCHANGE_USER_ORG:-myorg}   # the name of the org which you will use to create nodes, service, patterns, and deployment policies
-export EXCHANGE_WAIT_ITERATIONS=${EXCHANGE_WAIT_ITERATIONS:-10}
+export EXCHANGE_WAIT_ITERATIONS=${EXCHANGE_WAIT_ITERATIONS:-30}
 export EXCHANGE_WAIT_INTERVAL=${EXCHANGE_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
 
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -118,7 +118,7 @@ export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
 export AGENT_INSTALL_URL=${AGENT_INSTALL_URL:-https://github.com/open-horizon/anax/releases/latest/download/agent-install.sh}
 # Note: in this environment, we are not supporting letting them specify their own owner key pair
 
-export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-10}
+export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
 export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
 
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
