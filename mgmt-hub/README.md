@@ -12,9 +12,9 @@ Run the following command to deploy the Horizon components on your current host.
 - The command below must be **run as root**. If you need to use **sudo** to become root, run `sudo -i`, and then run the command below as shown.
 - If running on **macOS**:
   - You must [install docker](https://docs.docker.com/docker-for-mac/install) yourself before running this script.
-  - If you do not already have [brew](https://brew.sh/) installed, this script can not automatically install other prerequisites (you will have to install them yourself)
+  - You must install prerequisites: jq, gettext, and socat. If you have [brew](https://brew.sh/) installed, you can install these prerequisites with: `brew install jq gettext socat`
   - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. I made some of the recommended changes to this script and made some recommended changes to my docker settings (removed all the File Sharing paths except /private, disabled debug and experimental, and moved up to the Edge release). This enabled me to get past the problem, but I'm not sure if others will hit it or not.
-- The script can be run without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) for all of the variables supported.
+- The script can be run without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) (just passed the usage and command line parsing) for all of the environment variables that can be overridden. All of the `*_PW` and `*_TOKEN` environment variables can be overridden, and any variable in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
