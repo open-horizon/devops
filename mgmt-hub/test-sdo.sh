@@ -44,7 +44,9 @@ done
 export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
 export SDO_SAMPLE_MFG_KEEP_SVCS=${SDO_SAMPLE_MFG_KEEP_SVCS:-true}
 export SDO_MFG_IMAGE_TAG=${SDO_MFG_IMAGE_TAG:-latest}
-export SDO_SUPPORT_REPO=${SDO_SUPPORT_REPO:-https://raw.githubusercontent.com/open-horizon/SDO-support/master}
+#export SDO_SUPPORT_REPO=${SDO_SUPPORT_REPO:-https://raw.githubusercontent.com/open-horizon/SDO-support/master}
+SDO_SUPPORT_RELEASE=${SDO_SUPPORT_RELEASE:-https://github.com/open-horizon/SDO-support/releases/download/v1.8}   #todo: change default to releases/latest/download once 1.9 is working
+SDO_TO0_WAIT=${SDO_TO0_WAIT:-3}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
 
 CURL_OUTPUT_FILE=/tmp/horizon/curlExchangeOutput
 CURL_ERROR_FILE=/tmp/horizon/curlExchangeErrors
@@ -190,7 +192,8 @@ echo "Ping response from rendezvous server:"
 jq . $CURL_OUTPUT_FILE
 
 echo -e "\n======================== Configuring this host as a simulated SDO device..."
-getUrlFile $SDO_SUPPORT_REPO/sample-mfg/simulate-mfg.sh simulate-mfg.sh
+#getUrlFile $SDO_SUPPORT_REPO/sample-mfg/simulate-mfg.sh simulate-mfg.sh
+getUrlFile $SDO_SUPPORT_RELEASE/simulate-mfg.sh simulate-mfg.sh
 chmod +x simulate-mfg.sh
 chk $? 'making simulate-mfg.sh executable'
 ./simulate-mfg.sh   # the output of this is the /var/sdo/voucher.json file
@@ -199,7 +202,10 @@ chk $? 'running simulate-mfg.sh'
 echo -e "\n======================== Importing the device voucher..."
 hzn voucher import /var/sdo/voucher.json --policy node.policy.json
 chk $? 'importing the voucher'
+echo "Waiting for $SDO_TO0_WAIT seconds for sdo-owner-services to register the voucher with the rendezvous server..."
+sleep $SDO_TO0_WAIT
 
 echo -e "\n======================== Simulating booting the SDO device..."
+unset HZN_DEVICE_ID   # this would conflict with the agent-install.sh -n flag
 /usr/sdo/bin/owner-boot-device ibm.helloworld
 chk $? 'simulating booting the device'
