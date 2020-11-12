@@ -665,16 +665,6 @@ curl -sSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_U
 chk $? 'publishing examples'
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
-# Temporary fixes: create pattern in user org, and restart agbot now that the agbot definition in the exchange has been configured (issues: https://github.com/open-horizon/anax/issues/1865 and https://github.com/open-horizon/anax/issues/1888)
-#exchangeUrl=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
-#if [[ $(exchangeGet $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
-#    httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
-#    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
-#fi
-#echo "Restarting the agbot container as a temporary work around..."
-#docker-compose restart -t 10 agbot
-#chk $? 'restarting agbot service'
-
 # Register the agent
 echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
 getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
