@@ -5,7 +5,7 @@
 usage() {
     exitCode=${1:-0}
     cat << EndOfMessage
-Usage: ${0##*/} [-h] [-v] [-s | -S | -r <container>] [-P]
+Usage: ${0##*/} [-h] [-v] [-s | -u | -S | -r <container>] [-P]
 
 Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently only supported on Ubuntu 18.04 and macOS (the macOS support is experimental).
 
@@ -13,6 +13,7 @@ Flags:
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
   -P    Purge (delete) the persistent volumes of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
   -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
+  -u    Update any container whose specified version is not currently running.
   -r <container>   Have docker-compose restart the specified container.
   -v    Verbose output.
   -h    Show this usage.
@@ -24,13 +25,15 @@ EndOfMessage
 }
 
 # Parse cmd line
-while getopts ":SPsr:vh" opt; do
+while getopts ":SPsur:vh" opt; do
 	case $opt in
 		S)  STOP=1
 		    ;;
 		P)  PURGE=1
 		    ;;
 		s)  START=1
+		    ;;
+		u)  UPDATE=1
 		    ;;
 		r)  RESTART="$OPTARG"
 		    ;;
@@ -306,6 +309,23 @@ getUrlFile() {
     fi
 }
 
+# Pull all of the docker images to ensure we have the most recent images locally
+pullImages() {
+    # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
+    echo "Pulling openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}..."
+    runCmdQuietly docker pull openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
+    echo "Pulling openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}..."
+    runCmdQuietly docker pull openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
+    echo "Pulling openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}..."
+    runCmdQuietly docker pull openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
+    echo "Pulling postgres:${POSTGRES_IMAGE_TAG}..."
+    runCmdQuietly docker pull postgres:${POSTGRES_IMAGE_TAG}
+    echo "Pulling mongo:${MONGO_IMAGE_TAG}..."
+    runCmdQuietly docker pull mongo:${MONGO_IMAGE_TAG}
+    echo "Pulling openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}..."
+    runCmdQuietly docker pull openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}
+}
+
 # Find 1 of the private IPs of the host
 getPrivateIp() {
     if isMacOS; then ipCmd=ifconfig
@@ -328,8 +348,8 @@ fi
 # Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
 
 # Check for invalid flag combinations
-if [[ $(( ${START:-0} + ${STOP:-0} )) -gt 1 ]]; then
-    fatal 1 "only 1 of these flags can be specified"
+if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 1 ]]; then
+    fatal 1 "only 1 of these flags can be specified: -s, -S, -u"
 fi
 if [[ -n "$PURGE" && -z "$STOP" ]]; then
     fatal 1 "-p can only be used with -S"
@@ -350,7 +370,7 @@ if [[ -n "$STOP" ]]; then
         systemctl stop horizon
         if [[ -n "$PURGE" ]]; then
             echo "Uninstalling the Horizon agent..."
-            runCmdQuietly apt-get purge -yq bluehorizon horizon horizon-cli
+            runCmdQuietly apt-get purge -yq horizon horizon-cli
         fi
     fi
 
@@ -367,6 +387,7 @@ fi
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
     echo "Starting management hub containers..."
+    pullImages
     docker-compose up -d --no-build
     chk $? 'starting docker-compose services'
 
@@ -379,10 +400,19 @@ if [[ -n "$START" ]]; then
     exit
 fi
 
+# Run 'docker-compose up ...' again so any mgmt hub containers will be updated
+if [[ -n "$UPDATE" ]]; then
+    echo "Updating management hub containers..."
+    pullImages
+    docker-compose up -d --no-build
+    chk $? 'updating docker-compose services'
+    exit
+fi
+
 # Restart 1 mgmt hub container
 if [[ -n "$RESTART" ]]; then
-    if [[ $(( ${START:-0} + ${STOP:-0} )) -gt 0 ]]; then
-        fatal 1 "-s or -S can not be specified with -r"
+    if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 0 ]]; then
+        fatal 1 "-s or -S or -u cannot be specified with -r"
     fi
     echo "Restarting the $RESTART container..."
     docker-compose restart -t 10 "$RESTART"
@@ -465,7 +495,7 @@ else
         getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
         chmod +x deploy-mgmt-hub.sh
     fi
-    # also leave a copy of test-sdo.sh so they can run that afterward if they want to give SDO a spin
+    # also leave a copy of test-sdo.sh so they can run that afterward if they want to take SDO for a spin
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
     chmod +x test-sdo.sh
 fi
@@ -480,19 +510,8 @@ cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
 # Start mgmt hub services
 echo "----------- Downloading/starting Horizon management hub services..."
 echo "Downloading management hub docker images..."
-# Even though docker-compose will pull these, it won't pull again if it already has a local copy of the 'latest' tag but it has been updated on docker hub
-echo "Pulling openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}..."
-runCmdQuietly docker pull openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
-echo "Pulling openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}..."
-runCmdQuietly docker pull openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
-echo "Pulling openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}..."
-runCmdQuietly docker pull openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
-echo "Pulling postgres:${POSTGRES_IMAGE_TAG}..."
-runCmdQuietly docker pull postgres:${POSTGRES_IMAGE_TAG}
-echo "Pulling mongo:${MONGO_IMAGE_TAG}..."
-runCmdQuietly docker pull mongo:${MONGO_IMAGE_TAG}
-echo "Pulling openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}..."
-runCmdQuietly docker pull openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}
+# Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
+pullImages
 
 echo "Starting management hub containers..."
 docker-compose up -d --no-build
@@ -558,7 +577,7 @@ chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/bus
 # Create the user org and an admin user within it
 echo "Creating exchange user org and admin user..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG) != 200 ]]; then
-    httpCode=$(exchangePost -d "{\"label\":\"$EXCHANGE_USER_ORG\",\"description\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG)
+    httpCode=$(exchangePost -d "{\"label\":\"$EXCHANGE_USER_ORG\",\"description\":\"$EXCHANGE_USER_ORG\",\"heartbeatIntervals\":{\"minInterval\":3,\"maxInterval\":10,\"intervalAdjustment\":1}}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG/users/admin) != 200 ]]; then
@@ -647,14 +666,14 @@ chk $? 'publishing examples'
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
 # Temporary fixes: create pattern in user org, and restart agbot now that the agbot definition in the exchange has been configured (issues: https://github.com/open-horizon/anax/issues/1865 and https://github.com/open-horizon/anax/issues/1888)
-exchangeUrl=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
-if [[ $(exchangeGet $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
-    httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
-    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
-fi
-echo "Restarting the agbot container as a temporary work around..."
-docker-compose restart -t 10 agbot
-chk $? 'restarting agbot service'
+#exchangeUrl=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
+#if [[ $(exchangeGet $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete) != 200 ]]; then
+#    httpCode=$(exchangePost -d "{\"label\":\"temporary\",\"services\":[{\"serviceUrl\":\"ibm.helloworld\",\"serviceOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"serviceArch\":\"amd64\",\"serviceVersions\":[{\"version\":\"1.0.0\"}]}]}" $exchangeUrl/orgs/$EXCHANGE_USER_ORG/patterns/donotdelete)
+#    chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG/patterns/donotdelete" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+#fi
+#echo "Restarting the agbot container as a temporary work around..."
+#docker-compose restart -t 10 agbot
+#chk $? 'restarting agbot service'
 
 # Register the agent
 echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
