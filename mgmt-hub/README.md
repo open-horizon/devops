@@ -57,7 +57,7 @@ Then you can run these commands:
     "destinationType": "pattern-ibm.helloworld"
   }
   EOF
-  echo -e "foo\nbar" > mms-file
+  echo "foo\nbar" > mms-file
   hzn mms object publish -m mms-meta.json -f mms-file
   ```
 
