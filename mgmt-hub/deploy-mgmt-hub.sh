@@ -60,7 +60,11 @@ if [[ -z "$EXCHANGE_ROOT_PW" ]];then
     fi
     EXCHANGE_ROOT_PW_GENERATED=1
 fi
-generateToken() { cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w $1 | head -n 1; }
+
+# the original command doesn't work on macos big sur
+# see https://gist.github.com/earthgecko/3089509#gistcomment-3530978
+generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd A-Za-z0-9  | head -c $1;}
+
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
 export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must use the clear pw when they do not specify their own exch root pw
 
