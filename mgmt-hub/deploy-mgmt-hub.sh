@@ -61,8 +61,7 @@ if [[ -z "$EXCHANGE_ROOT_PW" ]];then
     EXCHANGE_ROOT_PW_GENERATED=1
 fi
 
-# the original command doesn't work on macos big sur
-# see https://gist.github.com/earthgecko/3089509#gistcomment-3530978
+# based on https://gist.github.com/earthgecko/3089509#gistcomment-3530978 (also works on macOS Big Sur )
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd A-Za-z0-9  | head -c $1;}
 
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
