@@ -506,6 +506,7 @@ mkdir -p /etc/horizon   # putting the config files here because they are mounted
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
+chmod a+r /etc/horizon/*
 
 # Start mgmt hub services
 echo "----------- Downloading/starting Horizon management hub services..."
