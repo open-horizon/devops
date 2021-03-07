@@ -7,7 +7,10 @@ usage() {
     cat << EndOfMessage
 Usage: ${0##*/} [-h] [-v] [-s | -u | -S | -r <container>] [-P]
 
-Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently only supported on Ubuntu 18.04 and macOS (the macOS support is experimental).
+Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently supports the following operating systems:
+
+* Ubuntu (recent LTS releases 18.04 and 20.04)
+* macOS (experimental)
 
 Flags:
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
@@ -211,6 +214,14 @@ isMacOS() {
 
 isUbuntu18() {
     if [[ "$DISTRO" == 'Ubuntu 18.'* ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isUbuntu20() {
+    if [[ "$DISTRO" == 'Ubuntu 20.'* ]]; then
 		return 0
 	else
 		return 1
@@ -427,8 +438,8 @@ if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
     fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
 fi
 ensureWeAreRoot
-if ! isMacOS && ! isUbuntu18; then
-    fatal 1 "the host must be Ubuntu 18.x or macOS"
+if ! isMacOS && ! isUbuntu18 && ! isUbuntu20; then
+    fatal 1 "the host must be Ubuntu LTS (18.x or 20.x), or macOS"
 fi
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
 echo "Management hub services will listen on $HZN_LISTEN_IP"
