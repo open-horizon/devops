@@ -381,6 +381,12 @@ if [[ -n "$STOP" ]]; then
         echo "Stopping Horizon management hub services..."
     fi
     docker-compose down $purgeFlag
+
+    if [[ -n "$PURGE" ]]; then
+        echo "Removing Open-horizon Docker images"
+        runCmdQuietly docker rmi '$(docker images openhorizon/* -q)'
+    fi
+    
     exit
 fi
 
