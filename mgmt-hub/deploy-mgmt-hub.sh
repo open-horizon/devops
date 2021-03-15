@@ -384,9 +384,8 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" ]]; then
         echo "Removing Open-horizon Docker images"
-        runCmdQuietly docker rmi '$(docker images openhorizon/* -q)'
+        runCmdQuietly docker rmi $(docker images openhorizon/* -q)
     fi
-    
     exit
 fi
 
