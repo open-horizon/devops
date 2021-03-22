@@ -8,8 +8,11 @@ Run the following command to deploy the Horizon components on your current host.
 
 **Notes:**
 
-- This is currently **only supported on Ubuntu 18.x and macOS**
+- The main script is currently **only supported on Ubuntu 18.x, Ubuntu 20.x and macOS**
+  - The SDO test `test-sdo.sh` is only supported on Ubuntu 18.x
 - The command below must be **run as root**. If you need to use **sudo** to become root, run `sudo -i`, and then run the command below as shown.
+- If running on **Ubuntu** or any other distribution with the **Snap** package manager:
+  - This script is not yet compatible with Docker installed via Snap. Please use this script only with non-Snap versions of Docker. Alternatively, remove the existing Docker snap if feasible and allow the script to reinstall the latest version of Docker.
 - If running on **macOS**:
   - You must [install docker](https://docs.docker.com/docker-for-mac/install) yourself before running this script.
   - You must install prerequisites: jq, gettext, and socat. If you have [brew](https://brew.sh/) installed, you can install these prerequisites with: `brew install jq gettext socat`
