@@ -25,7 +25,7 @@
         "IgnoreContractWithAttribs": "ethereum_account",
         "ExchangeURL": "${HZN_TRANSPORT}://exchange-api:8080/v1",
         "ExchangeId": "${EXCHANGE_SYSTEM_ORG}/${AGBOT_ID}",
-        "ExchangeToken":"${AGBOT_TOKEN}",
+        "ExchangeToken": "${AGBOT_TOKEN}",
         "ExchangeVersionCheckIntervalM": 1,
         "ExchangeHeartbeat": 10,
         "ExchangeMessageTTL": 1800,
@@ -38,6 +38,10 @@
         "CSSURL": "${HZN_TRANSPORT}://css-api:${CSS_PORT}",
         "SecureAPIListenHost": "0.0.0.0",
         "SecureAPIListenPort": "8083",
+        "Vault": {
+            "VaultURL": "${VAULT_ADDR}",
+            "VaultToken": "${VAULT_DEV_ROOT_TOKEN_ID}"
+        },
         "AgreementBatchSize": 1300
     },
     "ArchSynonyms": {

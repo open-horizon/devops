@@ -88,6 +88,13 @@ if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     HZN_DEVICE_TOKEN_GENERATED=1
 fi
 
+export HASHICORP_VAULT_IMAGE_TAG=${HASHICORP_VAULT_IMAGE_TAG:-latest}
+export VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID:-vault_dev_root_token_id}
+export VAULT_DEV_LISTEN_IP=${VAULT_DEV_LISTEN_IP:-0.0.0.0}
+export VAULT_PORT=${VAULT_PORT:-8200}
+export VAULT_LOG_LEVEL="info"
+export VAULT_ADDR="http://vault:$VAULT_PORT"
+
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP, altho this is not recommended, since the services use http.
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
 
@@ -145,6 +152,8 @@ TMP_DIR=/tmp/horizon
 mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
+VAULT_OUTPUT_FILE=$TMP_DIR/curlVaultOutput
+VAULT_ERROR_FILE=$TMP_DIR/curlVaultError
 SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
 DISTRO=${DISTRO:-$(lsb_release -d 2>/dev/null | awk '{print $2" "$3}')}
 
@@ -335,6 +344,10 @@ pullImages() {
     runCmdQuietly docker pull mongo:${MONGO_IMAGE_TAG}
     echo "Pulling openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}..."
     runCmdQuietly docker pull openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}
+    if [[ -n "$HZN_VAULT" ]]; then
+        echo "Pulling hashicorp/vault:${HASHICORP_VAULT_IMAGE_TAG}..."
+        runCmdQuietly docker pull hashicorp/vault:${HASHICORP_VAULT_IMAGE_TAG}
+    fi
 }
 
 # Find 1 of the private IPs of the host
@@ -396,16 +409,25 @@ if [[ -n "$STOP" ]]; then
     if [[ -n "$PURGE" ]]; then
         echo "Removing Open-horizon Docker images"
         runCmdQuietly docker rmi $(docker images openhorizon/* -q)
+        echo "Removing vault docker image if HZN_VAULT was defined"
+        runCmdQuietly docker rmi $(docker images hashicorp/vault -q)
     fi
     exit
 fi
 
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
-    echo "Starting management hub containers..."
     pullImages
-    docker-compose up -d --no-build
-    chk $? 'starting docker-compose services'
+    if [[ -n $HZN_VAULT ]]; then
+        echo "Starting management hub + vault containers..."
+        docker-compose up -d --no-build
+        chk $? 'starting docker-compose services (including vault)'
+    else
+        echo "Starting management hub containers..."
+        docker-compose up -d --no-build agbot && \
+        docker-compose up -d --no-build sdo-owner-services
+        chk $? 'starting docker-compose services'
+    fi
 
     echo "Starting the Horizon agent..."
     if isMacOS; then
@@ -420,7 +442,8 @@ fi
 if [[ -n "$UPDATE" ]]; then
     echo "Updating management hub containers..."
     pullImages
-    docker-compose up -d --no-build
+    docker-compose up -d --no-build agbot && \
+    docker-compose up -d --no-build sdo-owner-services
     chk $? 'updating docker-compose services'
     exit
 fi
@@ -530,9 +553,18 @@ echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
 pullImages
 
-echo "Starting management hub containers..."
-docker-compose up -d --no-build
-chk $? 'starting docker-compose services'
+# If the variable HZN_VAULT is set (to anything) the vault container is started.
+if [[ -n $HZN_VAULT ]]; then
+    echo "Starting management hub + vault containers..."
+    docker-compose up -d --no-build
+    chk $? 'starting docker-compose services (including vault)'
+else
+    echo "Starting management hub containers..."
+    echo "HZN_VAULT is not set, hence will skip vault..."
+    docker-compose up -d --no-build agbot && \
+    docker-compose up -d --no-build sdo-owner-services
+    chk $? 'starting docker-compose services'
+fi
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
@@ -709,6 +741,29 @@ fi
 $HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 100
 chk $? 'registration'
 
+# If HZN_VAULT is specified, also verify the vault is responding and is authenticated
+# If passed, they automatically configure the vault ready to be used.
+VAULT_ADDR=http://$MODIFIED_LISTEN_IP:$VAULT_PORT
+echo "Starting hashicorp vault reachability tests..."
+vault_status() {
+    curl --write-out "%{http_code}" --silent -o $VAULT_OUTPUT_FILE ${VAULT_ADDR}/v1/sys/seal-status 2>$VAULT_ERROR_FILE
+}
+
+vault_authenticate() {
+    curl --write-out "%{http_code}" --silent -o $VAULT_OUTPUT_FILE -H "X-Vault-Token: $VAULT_DEV_ROOT_TOKEN_ID" -X GET ${VAULT_ADDR}/v1/auth/token/lookup-self 2>$VAULT_ERROR_FILE
+}
+
+echo "Checking vault status"
+if [[ $(vault_status) != 200 ]]; then
+    fatal 6 "Cannot reach vault at ${VAULT_ADDR}: $(cat $VAULT_ERROR_FILE 2>/dev/null)"
+fi
+
+echo "Authenticating to the vault"
+if [[ $(vault_authenticate) != 200 ]]; then
+    fatal 6 "Cannot authenticate to vault at ${VAULT_ADDR}: $(cat $VAULT_ERROR_FILE 2>/dev/null)"
+fi
+echo "Vault tests passed succesfully."
+
 # Summarize
 echo -e "\n----------- Summary of what was done:"
 echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB"
@@ -735,6 +790,10 @@ echo "  3. Installed the Horizon agent and CLI (hzn)"
 echo "  4. Created a Horizon developer key pair"
 echo "  5. Installed the Horizon examples"
 echo "  6. Created and registered an edge node to run the helloworld example edge service"
+if [[ -n $HZN_VAULT ]]; then
+    echo "  7. Hashicorp vault started at ${VAULT_ADDR}"
+    echo "     - Vault root token id: $VAULT_DEV_ROOT_TOKEN_ID"
+fi
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
 fi
@@ -747,3 +806,8 @@ fi
 echo "Before running the commands in the What To Do Next section, copy/paste/run these commands in your terminal:"
 echo " export HZN_ORG_ID=$EXCHANGE_USER_ORG"
 echo " export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"
+if [[ -n $HZN_VAULT ]]; then
+    echo "To use the vault directly from the host, run the following commands"
+    echo " export VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID"
+    echo " export VAULT_ADDR=${VAULT_ADDR}"
+fi
