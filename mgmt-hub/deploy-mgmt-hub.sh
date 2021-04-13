@@ -268,6 +268,14 @@ isUbuntu20() {
 	fi
 }
 
+isUbuntu20() {
+    if [[ "$DISTRO" == 'Ubuntu 20.'* ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
 isDirInPath() {
     local dir="$1"
     echo $PATH | grep -q -E "(^|:)$dir(:|$)"
