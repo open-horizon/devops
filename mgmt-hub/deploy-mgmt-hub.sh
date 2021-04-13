@@ -81,7 +81,7 @@ if [[ -z "$EXCHANGE_ROOT_PW" ]];then
     fi
     EXCHANGE_ROOT_PW_GENERATED=1
 fi
-generateToken() { cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w $1 | head -n 1; }
+generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }   # inspired by https://gist.github.com/earthgecko/3089509#gistcomment-3530978
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
 export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must use the clear pw when they do not specify their own exch root pw
 
@@ -397,6 +397,25 @@ getPrivateIp() {
     if isMacOS; then ipCmd=ifconfig
     else ipCmd='ip address'; fi
     $ipCmd | grep -m 1 -o -E "\sinet (172|10|192.168)[^/\s]*" | awk '{ print $2 }'
+}
+
+# Source the hzn autocomplete file
+function add_autocomplete() {
+    local shellFile="${SHELL##*/}"
+    local autocomplete
+
+    if isMacOS; then
+        local autocomplete="/usr/local/share/horizon/hzn_bash_autocomplete.sh"
+        # The default terminal app on mac reads .bash_profile instead of .bashrc . But some 3rd part terminal apps read .bashrc, so update that too, if it exists
+        for rcFile in ~/.${shellFile}_profile ~/.${shellFile}rc; do
+            if [[ -f "$rcFile" ]]; then
+                grep -q -E "^source ${autocomplete}" $rcFile 2>/dev/null || echo -e "\nsource ${autocomplete}" >> $rcFile
+            fi
+        done
+    else   # linux
+        local autocomplete="/etc/bash_completion.d/hzn_bash_autocomplete.sh"
+        grep -q -E "^source ${autocomplete}" ~/.${shellFile}rc 2>/dev/null || echo -e "\nsource ${autocomplete}" >>~/.${shellFile}rc
+    fi
 }
 
 # Set distro-dependent variables
@@ -774,6 +793,7 @@ else   # ubuntu and redhat
         runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $TMP_DIR/pkgs/horizon*.rpm
     fi
 fi
+add_autocomplete
 
 # Configure the agent/CLI
 echo "Configuring the Horizon agent and CLI..."
