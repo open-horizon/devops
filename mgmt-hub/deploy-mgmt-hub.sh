@@ -9,8 +9,10 @@ Usage: ${0##*/} [-h] [-v] [-s | -u | -S | -r <container>] [-P]
 
 Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently supports the following operating systems:
 
-* Ubuntu (recent LTS releases 18.04 and 20.04)
+* Ubuntu (recent LTS releases 18.04 (amd64,  ppc64le) and 20.04 (amd64, ppc64le))
 * macOS (experimental)
+* RHEL 7.9 and RHEL 8.3 (both on ppc64le)
+* Support of ppc64le is experimental
 
 Flags:
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
@@ -26,6 +28,22 @@ Optional Environment Variables:
 EndOfMessage
     exit $exitCode
 }
+
+# Get current hardware architecture
+export ARCH=$(uname -m | sed -e 's/aarch64.*/arm64/' -e 's/x86_64.*/amd64/' -e 's/armv.*/arm/')
+if [ "${ARCH}" = "ppc64le" ]; then
+    export ARCH_DEB=ppc64el
+else
+    export ARCH_DEB="${ARCH}"
+fi
+
+# Set the correct default value for docker-compose command regarding to architecture
+if [ "${ARCH}" = "amd64" ]; then
+    export DOCKER_COMPOSE_CMD="docker-compose"
+else    # ppc64le
+    export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
+    unset LC_CTYPE  # Fix wrong locale setting in RHEL 7.9? for pipenv utility
+fi
 
 # Parse cmd line
 while getopts ":SPsur:vh" opt; do
@@ -91,6 +109,7 @@ fi
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP, altho this is not recommended, since the services use http.
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
 
+export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-openhorizon/${ARCH}_exchange-api}
 export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export EXCHANGE_PORT=${EXCHANGE_PORT:-3090}
 export EXCHANGE_LOG_LEVEL=${EXCHANGE_LOG_LEVEL:-INFO}
@@ -99,22 +118,27 @@ export EXCHANGE_USER_ORG=${EXCHANGE_USER_ORG:-myorg}   # the name of the org whi
 export EXCHANGE_WAIT_ITERATIONS=${EXCHANGE_WAIT_ITERATIONS:-30}
 export EXCHANGE_WAIT_INTERVAL=${EXCHANGE_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
 
+export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-openhorizon/${ARCH}_agbot}
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export AGBOT_PORT=${AGBOT_PORT:-3091}
 export AGBOT_ID=${AGBOT_ID:-agbot}   # its agbot id in the exchange
 
+export CSS_IMAGE_NAME=${CSS_IMAGE_NAME:-openhorizon/${ARCH}_cloud-sync-service}
 export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export CSS_PORT=${CSS_PORT:-9443}
 
+export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
 export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export POSTGRES_PORT=${POSTGRES_PORT:-5432}
 export POSTGRES_USER=${POSTGRES_USER:-admin}
 export EXCHANGE_DATABASE=${EXCHANGE_DATABASE:-exchange}   # the db the exchange uses in the postgres instance
 export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get 2 different databases created in postgres. The db the agbot uses in the postgres instance
 
+export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
 export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
 
+export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-latest}   # or can be set to stable, testing, or a specific version
 export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-9008}
 export SDO_RV_PORT=${SDO_RV_PORT:-8040}
@@ -134,8 +158,8 @@ export HC_DOCKER_TAG=${HC_DOCKER_TAG:-testing}   # when using the anax-in-contai
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
 OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releases/latest/download}
 OH_ANAX_MAC_PKG_TAR=${OH_ANAX_MAC_PKG_TAR:-horizon-agent-macos-pkg-x86_64.tar.gz}
-OH_ANAX_DEB_PKG_TAR=${OH_ANAX_DEB_PKG_TAR:-horizon-agent-linux-deb-amd64.tar.gz}
-OH_ANAX_RPM_PKG_TAR=${OH_ANAX_RPM_PKG_TAR:-horizon-agent-linux-rpm-x86_64.tar.gz}   # not used/supported yet
+OH_ANAX_DEB_PKG_TAR=${OH_ANAX_DEB_PKG_TAR:-horizon-agent-linux-deb-${ARCH_DEB}.tar.gz}
+OH_ANAX_RPM_PKG_TAR=${OH_ANAX_RPM_PKG_TAR:-horizon-agent-linux-rpm-${ARCH}.tar.gz}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
@@ -146,7 +170,7 @@ mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
 SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
-DISTRO=${DISTRO:-$(lsb_release -d 2>/dev/null | awk '{print $2" "$3}')}
+DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
 
 #====================== Functions ======================
 
@@ -213,7 +237,31 @@ isMacOS() {
 }
 
 isUbuntu18() {
-    if [[ "$DISTRO" == 'Ubuntu 18.'* ]]; then
+    if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isRedHat79() {
+    if [[ "$DISTRO" == 'rhel 7.9' ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isRedHat83() {
+    if [[ "$DISTRO" == 'rhel 8.3' ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+isUbuntu20() {
+    if [[ "$DISTRO" == 'ubuntu 20.'* ]]; then
 		return 0
 	else
 		return 1
@@ -261,6 +309,13 @@ runCmdQuietly() {
 isCmdInstalled() {
     local cmd=$1
     command -v $cmd >/dev/null 2>&1
+    local ret=$?
+    # Special addition for python-based version of docker-compose
+    if [ $ret != "0" ] && [ $cmd = "docker-compose" ]; then
+        ${DOCKER_COMPOSE_CMD} version --short >/dev/null 2>&1
+        ret=$?
+    fi
+    return $ret
 }
 
 # Returns exit code 0 if all of the specified cmds are in the path
@@ -277,11 +332,11 @@ areCmdsInstalled() {
 isDockerComposeAtLeast() {
     : ${1:?}
     local minVersion=$1
-    if ! command -v docker-compose >/dev/null 2>&1; then
+    if ! isCmdInstalled docker-compose; then
         return 1   # it is not even installed
     fi
     # docker-compose is installed, check its version
-    lowerVersion=$(echo -e "$(docker-compose version --short)\n$minVersion" | sort -V | head -n1)
+    lowerVersion=$(echo -e "$(${DOCKER_COMPOSE_CMD} version --short)\n$minVersion" | sort -V | head -n1)
     if [[ $lowerVersion == $minVersion ]]; then
         return 0   # the installed version was >= minVersion
     else
@@ -289,7 +344,7 @@ isDockerComposeAtLeast() {
     fi
 }
 
-# Verify that the prereq commands we need are installed, or exist with error msg
+# Verify that the prereq commands we need are installed, or exit with error msg
 confirmCmds() {
     for c in $*; do
         #echo "checking $c..."
@@ -323,18 +378,18 @@ getUrlFile() {
 # Pull all of the docker images to ensure we have the most recent images locally
 pullImages() {
     # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
-    echo "Pulling openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}..."
-    runCmdQuietly docker pull openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
-    echo "Pulling openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}..."
-    runCmdQuietly docker pull openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
-    echo "Pulling openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}..."
-    runCmdQuietly docker pull openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
-    echo "Pulling postgres:${POSTGRES_IMAGE_TAG}..."
-    runCmdQuietly docker pull postgres:${POSTGRES_IMAGE_TAG}
-    echo "Pulling mongo:${MONGO_IMAGE_TAG}..."
-    runCmdQuietly docker pull mongo:${MONGO_IMAGE_TAG}
-    echo "Pulling openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}..."
-    runCmdQuietly docker pull openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}
+    echo "Pulling ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}..."
+    runCmdQuietly docker pull ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
+    echo "Pulling ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}..."
+    runCmdQuietly docker pull ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
+    echo "Pulling ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}..."
+    runCmdQuietly docker pull ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
+    echo "Pulling ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}..."
+    runCmdQuietly docker pull ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
+    echo "Pulling ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}..."
+    runCmdQuietly docker pull ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
+    echo "Pulling ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}..."
+    runCmdQuietly docker pull ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
 }
 
 # Find 1 of the private IPs of the host
@@ -349,10 +404,23 @@ if isMacOS; then
     HZN=/usr/local/bin/hzn   # this is where the mac horizon-cli pkg puts it
     export ETC=/private/etc
     export VOLUME_MODE=cached   # supposedly helps avoid 100% cpu consumption bug https://github.com/docker/for-mac/issues/3499
-else   # ubuntu
+else   # ubuntu and redhat
     HZN=hzn   # this deb horizon-cli pkg puts it in /usr/bin so it is always in the path
     export ETC=/etc
     export VOLUME_MODE=ro
+fi
+
+# Set OS-dependent package manager settings in Linux
+if isUbuntu18 || isUbuntu20; then
+    export PKG_MNGR=apt-get
+    export PKG_MNGR_INSTALL_QY_CMD="install -yqf"
+    export PKG_MNGR_PURGE_CMD="purge -yq"
+    export PKG_MNGR_GETTEXT="gettext-base"
+else   # redhat
+    export PKG_MNGR=yum
+    export PKG_MNGR_INSTALL_QY_CMD="install -y -q"
+    export PKG_MNGR_PURGE_CMD="erase -y -q"
+    export PKG_MNGR_GETTEXT="gettext"
 fi
 
 #====================== Start/Stop Utilities ======================
@@ -377,11 +445,11 @@ if [[ -n "$STOP" ]]; then
     if isMacOS; then
         /usr/local/bin/horizon-container stop
         # we don't currently have a way to uninstall the horizon and horizon-cli mac pkgs
-    else   # ubuntu
+    else   # ubuntu and redhat
         systemctl stop horizon
         if [[ -n "$PURGE" ]]; then
             echo "Uninstalling the Horizon agent..."
-            runCmdQuietly apt-get purge -yq horizon horizon-cli
+            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli
         fi
     fi
 
@@ -391,7 +459,7 @@ if [[ -n "$STOP" ]]; then
     else
         echo "Stopping Horizon management hub services..."
     fi
-    docker-compose down $purgeFlag
+    ${DOCKER_COMPOSE_CMD} down $purgeFlag
 
     if [[ -n "$PURGE" ]]; then
         echo "Removing Open-horizon Docker images"
@@ -404,13 +472,13 @@ fi
 if [[ -n "$START" ]]; then
     echo "Starting management hub containers..."
     pullImages
-    docker-compose up -d --no-build
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'starting docker-compose services'
 
     echo "Starting the Horizon agent..."
     if isMacOS; then
         /usr/local/bin/horizon-container start
-    else   # ubuntu
+    else   # ubuntu and redhat
         systemctl start horizon
     fi
     exit
@@ -420,7 +488,7 @@ fi
 if [[ -n "$UPDATE" ]]; then
     echo "Updating management hub containers..."
     pullImages
-    docker-compose up -d --no-build
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'updating docker-compose services'
     exit
 fi
@@ -431,7 +499,7 @@ if [[ -n "$RESTART" ]]; then
         fatal 1 "-s or -S or -u cannot be specified with -r"
     fi
     echo "Restarting the $RESTART container..."
-    docker-compose restart -t 10 "$RESTART"
+    ${DOCKER_COMPOSE_CMD} restart -t 10 "$RESTART"
     exit
 fi
 
@@ -443,8 +511,9 @@ if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
     fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
 fi
 ensureWeAreRoot
-if ! isMacOS && ! isUbuntu18 && ! isUbuntu20; then
-    fatal 1 "the host must be Ubuntu LTS (18.x or 20.x), or macOS"
+
+if ! isMacOS && ! isUbuntu18 && ! isRedHat79 && ! isUbuntu20 && ! isRedHat83; then
+    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 7.9 (ppc64le) or RedHat 8.3 (ppc64le)"
 fi
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
 echo "Management hub services will listen on $HZN_LISTEN_IP"
@@ -463,37 +532,96 @@ if isMacOS; then
             fatal 2 "the commands jq and envsubst are required, and since brew is not installed, we can not install them for you"
         fi
     fi
-else   # ubuntu
-    echo "Updating apt package index..."
-    runCmdQuietly apt-get update -q
+else   # ubuntu and redhat
+    echo "Updating ${PKG_MNGR} package index..."
+    runCmdQuietly ${PKG_MNGR} update -q -y
     echo "Installing prerequisites, this could take a minute..."
-    runCmdQuietly apt-get install -yqf jq gettext-base make
+    runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} jq ${PKG_MNGR_GETTEXT} make
 
     # If docker isn't installed, do that
-    if ! command -v docker >/dev/null 2>&1; then
+    if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-        chk $? 'adding docker repository key'
-        add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-        chk $? 'adding docker repository'
-        apt-get install -y docker-ce docker-ce-cli containerd.io
-        chk $? 'installing docker'
+        if isUbuntu18 || isUbuntu20; then
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+            chk $? 'adding docker repository key'
+            add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            chk $? 'adding docker repository'
+            if [ "${ARCH}" = "amd64" ]; then
+                ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
+            elif [ "${ARCH}" = "ppc64le" ]; then
+                if isUbuntu18; then
+                    ${PKG_MNGR} install -y docker-ce containerd.io
+                else # Ubuntu 20
+                    ${PKG_MNGR} install -y docker.io containerd
+                fi
+	        else
+	            fatal 1 "hardware plarform ${ARCH} is not supported yet"
+            fi
+            chk $? 'installing docker'
+        else # redhat
+            OP_REPO_ID="Open-Power"
+            IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
+            if [ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]; then
+                # Add OpenPower repo with ID Open-Power
+                cat > /etc/yum.repos.d/open-power.repo << EOFREPO
+[Open-Power]
+name=Unicamp OpenPower Lab - $basearch
+baseurl=https://oplab9.parqtec.unicamp.br/pub/repository/rpm/
+enabled=1
+gpgcheck=0
+repo_gpgcheck=1
+gpgkey=https://oplab9.parqtec.unicamp.br/pub/key/openpower-gpgkey-public.asc
+EOFREPO
+                runCmdQuietly ${PKG_MNGR} update -q -y
+            fi
+            DOC_CE_VER=$(yum list available docker-ce | grep docker-ce | awk '{ printf "%s\n", $2 }' | cut -d":" -f2)
+            DOC_CE_CLI_VER=$(yum list available docker-ce-cli | grep docker-ce | awk '{ printf "%s\n", $2 }' | cut -d":" -f2)
+            if isRedHat79; then
+                # Update Docker packages to .el7 version in RHEL 7.9
+                DOC_CE_VER=${DOC_CE_VER/%.el8/.el7}
+                DOC_CE_CLI_VER=${DOC_CE_CLI_VER/%.el8/.el7}
+            fi
+            ${PKG_MNGR} install -y docker-ce-${DOC_CE_VER} docker-ce-cli-${DOC_CE_CLI_VER} containerd
+            chk $? 'installing docker'
+            if isRedHat79 && [ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]; then
+                # Fix yum update for el7 version of Docker packages in RHEL 7.9
+                echo "exclude=docker-ce docker-ce-cli" >> /etc/yum.repos.d/open-power.repo
+                chk $? 'excluding docker-ce docker-ce-cli in Open-Power repo'
+            fi
+            systemctl --now --quiet enable docker
+            chk $? 'starting docker'
+        fi
     fi
 
     minVersion=1.21.0
     if ! isDockerComposeAtLeast $minVersion; then
-        if [[ -f '/usr/bin/docker-compose' ]]; then
+        if isCmdInstalled docker-compose; then
             echo "Error: Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
             exit 2
         fi
         echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
-        # Install docker-compose from its github repo, because that is the only way to get a recent enough version
-        curl --progress-bar -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chk $? 'downloading docker-compose'
-        chmod +x /usr/local/bin/docker-compose
-        chk $? 'making docker-compose executable'
-        ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
-        chk $? 'linking docker-compose to /usr/bin'
+        if [ "${ARCH}" = "amd64" ]; then
+            # Install docker-compose from its github repo, because that is the only way to get a recent enough version
+            curl --progress-bar -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            chk $? 'downloading docker-compose'
+            chmod +x /usr/local/bin/docker-compose
+            chk $? 'making docker-compose executable'
+            ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+            chk $? 'linking docker-compose to /usr/bin'
+	        export DOCKER_COMPOSE_CMD="docker-compose"
+        elif [ "${ARCH}" = "ppc64le" ]; then
+            # Install docker-compose for ppc64le platform (python-based)
+            ${PKG_MNGR} install -y python3 python3-pip
+            chk $? 'installing python3 and pip'
+            pip3 install pipenv
+            chk $? 'installing pipenv'
+	        # Install specific version of docker-compose because the latest one is not working just now (possible reason see on https://status.python.org)
+            pipenv install docker-compose==$minVersion
+            chk $? 'installing python-based docker-compose'
+	        export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
+	else
+	    fatal 1 "hardware plarform ${ARCH} is not supported yet"
+        fi
     fi
 fi
 
@@ -522,7 +650,6 @@ mkdir -p /etc/horizon   # putting the config files here because they are mounted
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
-chmod a+r /etc/horizon/*
 
 # Start mgmt hub services
 echo "----------- Downloading/starting Horizon management hub services..."
@@ -531,7 +658,7 @@ echo "Downloading management hub docker images..."
 pullImages
 
 echo "Starting management hub containers..."
-docker-compose up -d --no-build
+${DOCKER_COMPOSE_CMD} up -d --no-build
 chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
@@ -620,12 +747,32 @@ if isMacOS; then
     sudo installer -pkg $TMP_DIR/pkgs/horizon-cli-*.pkg -target /
     chk $? 'installing macos horizon-cli pkg'
     # we will install the agent below, after configuring /etc/default/horizon
-else   # ubuntu
-    getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_DEB_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR
-    tar -zxf $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.deb
-    chk $? 'extracting pkg tar file'
-    echo "Installing the Horizon agent and CLI packages..."
-    runCmdQuietly apt-get install -yqf $TMP_DIR/pkgs/horizon*.deb
+else   # ubuntu and redhat
+    if isUbuntu18 || isUbuntu20; then
+        getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_DEB_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR
+        tar -zxf $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.deb
+        chk $? 'extracting pkg tar file'
+        echo "Installing the Horizon agent and CLI packages..."
+        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $TMP_DIR/pkgs/horizon*.deb
+    else # redhat
+        getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
+        tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
+        chk $? 'extracting pkg tar file'
+        echo "Installing the Horizon agent and CLI packages..."
+        # Before install delete horizon-cli package if needed
+        PKG_NAME=horizon-cli
+        ${PKG_MNGR} list installed ${PKG_NAME} >/dev/null 2>&1
+        if [[ $? -eq 0 ]]; then
+            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} ${PKG_NAME}
+        fi
+        # Before install delete horizon package if needed
+        PKG_NAME=horizon
+        ${PKG_MNGR} list installed ${PKG_NAME} >/dev/null 2>&1
+        if [[ $? -eq 0 ]]; then
+            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} ${PKG_NAME}
+        fi
+        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $TMP_DIR/pkgs/horizon*.rpm
+    fi
 fi
 
 # Configure the agent/CLI
@@ -639,7 +786,7 @@ if isMacOS; then
     else
         MODIFIED_LISTEN_IP="$HZN_LISTEN_IP"
     fi
-else   # ubuntu
+else   # ubuntu and redhat
     MODIFIED_LISTEN_IP="$HZN_LISTEN_IP"
 fi
 mkdir -p /etc/default
@@ -662,7 +809,7 @@ if isMacOS; then
         /usr/local/bin/horizon-container start
         chk $? 'starting agent'
     fi
-else   # ubuntu
+else   # ubuntu and redhat
     systemctl restart horizon.service
     chk $? 'restarting agent'
 fi

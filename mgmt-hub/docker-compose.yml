@@ -14,7 +14,7 @@ networks:
 services:
 
   agbot:
-    image: openhorizon/amd64_agbot:${AGBOT_IMAGE_TAG}
+    image: ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
     container_name: agbot
     restart: always
     ports:
@@ -40,7 +40,7 @@ services:
       - postgres
 
   exchange-api:
-    image:  openhorizon/amd64_exchange-api:${EXCHANGE_IMAGE_TAG}
+    image:  ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
     container_name: exchange-api
     restart: always
     ports:
@@ -62,7 +62,7 @@ services:
       - postgres
 
   postgres:
-    image: postgres:${POSTGRES_IMAGE_TAG}
+    image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     container_name: postgres
     restart: always
     volumes:
@@ -80,7 +80,7 @@ services:
       retries: 3
 
   css-api:
-    image: openhorizon/amd64_cloud-sync-service:${CSS_IMAGE_TAG}
+    image: ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
     container_name: css-api
     restart: always
     ports:
@@ -103,7 +103,7 @@ services:
       - mongo
 
   mongo:
-    image: mongo:${MONGO_IMAGE_TAG}
+    image: ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
     container_name: mongo
     restart: always
     networks:
@@ -117,7 +117,7 @@ services:
       retries: 3
 
   sdo-owner-services:
-    image: openhorizon/sdo-owner-services:${SDO_IMAGE_TAG}
+    image: ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
     container_name: sdo-owner-services
     restart: always
     ports:
