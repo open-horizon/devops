@@ -31,14 +31,14 @@ EndOfMessage
 
 # Get current hardware architecture
 export ARCH=$(uname -m | sed -e 's/aarch64.*/arm64/' -e 's/x86_64.*/amd64/' -e 's/armv.*/arm/')
-if [ "${ARCH}" = "ppc64le" ]; then
+if [[ $ARCH == "ppc64le" ]]; then
     export ARCH_DEB=ppc64el
 else
     export ARCH_DEB="${ARCH}"
 fi
 
 # Set the correct default value for docker-compose command regarding to architecture
-if [ "${ARCH}" = "amd64" ]; then
+if [[ $ARCH == "amd64" ]]; then
     export DOCKER_COMPOSE_CMD="docker-compose"
 else    # ppc64le
     export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
@@ -307,7 +307,7 @@ isCmdInstalled() {
     command -v $cmd >/dev/null 2>&1
     local ret=$?
     # Special addition for python-based version of docker-compose
-    if [ $ret != "0" ] && [ $cmd = "docker-compose" ]; then
+    if [[ $ret -ne 0 && $cmd == "docker-compose" ]]; then
         ${DOCKER_COMPOSE_CMD} version --short >/dev/null 2>&1
         ret=$?
     fi
@@ -580,9 +580,9 @@ else   # ubuntu and redhat
             chk $? 'adding docker repository key'
             add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
             chk $? 'adding docker repository'
-            if [ "${ARCH}" = "amd64" ]; then
+            if [[ $ARCH == "amd64" ]]; then
                 ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
-            elif [ "${ARCH}" = "ppc64le" ]; then
+            elif [[ $ARCH == "ppc64le" ]]; then
                 if isUbuntu18; then
                     ${PKG_MNGR} install -y docker-ce containerd.io
                 else # Ubuntu 20
@@ -595,7 +595,7 @@ else   # ubuntu and redhat
         else # redhat
             OP_REPO_ID="Open-Power"
             IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
-            if [ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]; then
+            if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
                 # Add OpenPower repo with ID Open-Power
                 cat > /etc/yum.repos.d/open-power.repo << EOFREPO
 [Open-Power]
@@ -617,7 +617,7 @@ EOFREPO
             fi
             ${PKG_MNGR} install -y docker-ce-${DOC_CE_VER} docker-ce-cli-${DOC_CE_CLI_VER} containerd
             chk $? 'installing docker'
-            if isRedHat79 && [ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]; then
+            if isRedHat79 && [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
                 # Fix yum update for el7 version of Docker packages in RHEL 7.9
                 echo "exclude=docker-ce docker-ce-cli" >> /etc/yum.repos.d/open-power.repo
                 chk $? 'excluding docker-ce docker-ce-cli in Open-Power repo'
@@ -634,7 +634,7 @@ EOFREPO
             exit 2
         fi
         echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
-        if [ "${ARCH}" = "amd64" ]; then
+        if [[ "${ARCH}" == "amd64" ]]; then
             # Install docker-compose from its github repo, because that is the only way to get a recent enough version
             curl --progress-bar -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             chk $? 'downloading docker-compose'
@@ -643,7 +643,7 @@ EOFREPO
             ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
             chk $? 'linking docker-compose to /usr/bin'
 	        export DOCKER_COMPOSE_CMD="docker-compose"
-        elif [ "${ARCH}" = "ppc64le" ]; then
+        elif [[ "${ARCH}" == "ppc64le" ]]; then
             # Install docker-compose for ppc64le platform (python-based)
             ${PKG_MNGR} install -y python3 python3-pip
             chk $? 'installing python3 and pip'
@@ -751,6 +751,9 @@ else
 fi
 
 # Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs
+if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot) == 200 ]]; then
+    restartAgbot='true'   # we may be changing its token, so need to restart it. (If there is initially no agbot resource, the agbot will just wait until it appears)
+fi
 httpCode=$(exchangePut -d "{\"token\":\"$AGBOT_TOKEN\",\"name\":\"agbot\",\"publicKey\":\"\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot)
 chkHttp $? $httpCode 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns)
@@ -759,6 +762,11 @@ httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_USER_ORG\",\"pattern\"
 chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"businessPol\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols)
 chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+
+if [[ $restartAgbot == 'true' ]]; then
+    ${DOCKER_COMPOSE_CMD} restart -t 10 agbot   # docker-compose will print that it is restarting the agbot
+    chk $? 'restarting agbot service'
+fi
 
 # Create the user org and an admin user within it
 echo "Creating exchange user org and admin user..."
@@ -879,7 +887,7 @@ waitForAgent
 
 # if they previously registered, then unregister
 if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-    $HZN unregister -f
+    $HZN unregister -f $UNREGISTER_FLAGS
     chk $? 'unregistration'
     waitForAgent
 fi
