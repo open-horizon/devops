@@ -16,7 +16,7 @@ Deploys the Open Horizon management hub services, agent, and CLI on this host. C
 
 Flags:
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
-  -P    Purge (delete) the persistent volumes of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
+  -P    Purge (delete) the persistent volumes and images of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
   -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
   -u    Update any container whose specified version is not currently running.
   -r <container>   Have docker-compose restart the specified container.
@@ -479,7 +479,11 @@ if [[ -n "$STOP" ]]; then
     echo "Stopping the Horizon agent..."
     if isMacOS; then
         /usr/local/bin/horizon-container stop
-        # we don't currently have a way to uninstall the horizon and horizon-cli mac pkgs
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon agent..."
+            /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
+            runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
+        fi
     else   # ubuntu and redhat
         systemctl stop horizon
         if [[ -n "$PURGE" ]]; then
@@ -497,8 +501,8 @@ if [[ -n "$STOP" ]]; then
     ${DOCKER_COMPOSE_CMD} down $purgeFlag
 
     if [[ -n "$PURGE" ]]; then
-        echo "Removing Open-horizon Docker images"
-        runCmdQuietly docker rmi $(docker images openhorizon/* -q)
+        echo "Removing Open-horizon Docker images..."
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
     fi
     exit
 fi
