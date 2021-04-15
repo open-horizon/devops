@@ -9,10 +9,10 @@ Usage: ${0##*/} [-h] [-v] [-s | -u | -S | -r <container>] [-P]
 
 Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently supports the following operating systems:
 
-* Ubuntu (recent LTS releases 18.04 (amd64,  ppc64le) and 20.04 (amd64, ppc64le))
+* Ubuntu 18.x and 20.x (amd64, ppc64le)
 * macOS (experimental)
-* RHEL 7.9 and RHEL 8.3 (both on ppc64le)
-* Support of ppc64le is experimental
+* RHEL 7.9 and RHEL 8.x (ppc64le)
+* Note: The support for ppc64le is experimental, because the management hub components are not yet generally available for ppc64le.
 
 Flags:
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
@@ -69,26 +69,30 @@ while getopts ":SPsur:vh" opt; do
 	esac
 done
 
-# Default environment variables that can be overridden. Note: most of them have to be exported for envsubst for the template files.
+# Default environment variables that can be overridden. Note: most of them have to be exported for envsubst to use when processing the template files.
 
 # You have the option of specifying the exchange root pw: the clear value is only used in this script temporarily to prime the exchange.
 # The bcrypted value can be created using the /admin/hashpw API of an existing exhange. It is stored in the exchange config file, which
 # is needed each time the exchange starts. It will default to the clear pw, but that is less secure.
 if [[ -z "$EXCHANGE_ROOT_PW" ]];then
     if [[ -n "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
-        # Can't specify EXCHANGE_ROOT_PW_BCRYPTED while having use generate a random EXCHANGE_ROOT_PW, because they won't match
+        # Can't specify EXCHANGE_ROOT_PW_BCRYPTED while having this script generate a random EXCHANGE_ROOT_PW, because they won't match
         fatal 1 "can not specify EXCHANGE_ROOT_PW_BCRYPTED without also specifying the equivalent EXCHANGE_ROOT_PW"
     fi
     EXCHANGE_ROOT_PW_GENERATED=1
 fi
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }   # inspired by https://gist.github.com/earthgecko/3089509#gistcomment-3530978
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
-export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must use the clear pw when they do not specify their own exch root pw
+export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must default to the clear pw when they do not specify it
 
-# the password of the admin user in the system org. Defaults to a generated value that will be displayed at the end
+# the passwords of the admin user in the system org and of the hub admin. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_SYSTEM_ADMIN_PW" ]]; then
     export EXCHANGE_SYSTEM_ADMIN_PW=$(generateToken 30)
     EXCHANGE_SYSTEM_ADMIN_PW_GENERATED=1
+fi
+if [[ -z "$EXCHANGE_HUB_ADMIN_PW" ]]; then
+    export EXCHANGE_HUB_ADMIN_PW=$(generateToken 30)
+    EXCHANGE_HUB_ADMIN_PW_GENERATED=1
 fi
 # the system org agbot token. Defaults to a generated value that will be displayed at the end
 if [[ -z "$AGBOT_TOKEN" ]]; then
@@ -153,7 +157,7 @@ export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sl
 
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
 
-export HC_DOCKER_TAG=${HC_DOCKER_TAG:-testing}   # when using the anax-in-container agent
+export HC_DOCKER_TAG=${HC_DOCKER_TAG:-latest}   # when using the anax-in-container agent
 
 OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
 OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releases/latest/download}
@@ -392,7 +396,7 @@ getPrivateIp() {
 }
 
 # Source the hzn autocomplete file
-function add_autocomplete() {
+add_autocomplete() {
     local shellFile="${SHELL##*/}"
     local autocomplete
 
@@ -409,6 +413,26 @@ function add_autocomplete() {
         grep -q -E "^source ${autocomplete}" ~/.${shellFile}rc 2>/dev/null || echo -e "\nsource ${autocomplete}" >>~/.${shellFile}rc
     fi
 }
+
+waitForAgent() {
+    local success
+    printf "Waiting for the agent to be ready"
+    for ((i=1; i<=$AGENT_WAIT_ITERATIONS; i++)); do
+        if $HZN node list >/dev/null 2>$CURL_ERROR_FILE; then
+            success=true
+            break
+        fi
+        printf '.'
+        sleep $AGENT_WAIT_INTERVAL
+    done
+    echo ''
+    if [[ "$success" != 'true' ]]; then
+        local numSeconds=$(( $AGENT_WAIT_ITERATIONS * $AGENT_WAIT_INTERVAL ))
+        fatal 6 "can not reach the agent (tried for $numSeconds seconds): $(cat $CURL_ERROR_FILE 2>/dev/null)"
+    fi
+}
+
+#====================== End of Functions ======================
 
 # Set distro-dependent variables
 if isMacOS; then
@@ -535,13 +559,8 @@ if isMacOS; then
     if ! isCmdInstalled docker || ! isCmdInstalled docker-compose; then
         fatal 2 "you must install docker before running this script: https://docs.docker.com/docker-for-mac/install"
     fi
-    if ! areCmdsInstalled jq envsubst; then
-        if isCmdInstalled brew; then
-            echo "Installing prerequisites using brew, this could take a minute..."
-            runCmdQuietly brew install jq gettext
-        else
-            fatal 2 "the commands jq and envsubst are required, and since brew is not installed, we can not install them for you"
-        fi
+    if ! areCmdsInstalled jq envsubst socat; then
+        fatal 2 "these commands are required: jq, envsubst (installed via the gettext package), socat. Install them via https://brew.sh/ or https://www.macports.org/ ."
     fi
 else   # ubuntu and redhat
     echo "Updating ${PKG_MNGR} package index..."
@@ -708,8 +727,16 @@ fi
 # Note: in all of the checks below to see if the resource exists, we don't handle all of the error possibilities, because we'll catch them when we try to create the resource
 echo "----------- Creating the user org, the admin user in both orgs, and an agbot in the exchange..."
 
-# Create admin user in system org
-echo "Creating exchange admin user and agbot in the system org..."
+# Create the hub admin in the root org and the admin user in system org
+echo "Creating exchange hub admin user, and the admin user and agbot in the system org..."
+if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/root/users/hubadmin) != 200 ]]; then
+    httpCode=$(exchangePost -d "{\"password\":\"$EXCHANGE_HUB_ADMIN_PW\",\"hubAdmin\":true,\"admin\":false,\"email\":\"\"}" $HZN_EXCHANGE_URL/orgs/root/users/hubadmin)
+    chkHttp $? $httpCode 201 "creating /orgs/root/users/hubadmin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+else
+    # Set the pw to be what they specified this time
+    httpCode=$(exchangePost -d "{\"newPassword\":\"$EXCHANGE_HUB_ADMIN_PW\"}" $HZN_EXCHANGE_URL/orgs/root/users/hubadmin/changepw)
+    chkHttp $? $httpCode 201 "changing pw of /orgs/root/users/hubadmin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+fi
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin) != 200 ]]; then
     httpCode=$(exchangePost -d "{\"password\":\"$EXCHANGE_SYSTEM_ADMIN_PW\",\"admin\":true,\"email\":\"not@used\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/users/admin)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
@@ -844,28 +871,15 @@ unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them di
 # Register the agent
 echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
 getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
-
-printf "Waiting for the agent to be ready"
-for ((i=1; i<=$AGENT_WAIT_ITERATIONS; i++)); do
-    if $HZN node list >/dev/null 2>$CURL_ERROR_FILE; then
-        success=true
-        break
-    fi
-    printf '.'
-    sleep $AGENT_WAIT_INTERVAL
-done
-echo ''
-if [[ "$success" != 'true' ]]; then
-    numSeconds=$(( $AGENT_WAIT_ITERATIONS * $AGENT_WAIT_INTERVAL ))
-    fatal 6 "can not reach the agent (tried for $numSeconds seconds): $(cat $CURL_ERROR_FILE 2>/dev/null)"
-fi
+waitForAgent
 
 # if they previously registered, then unregister
 if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
     $HZN unregister -f
     chk $? 'unregistration'
+    waitForAgent
 fi
-$HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 100
+$HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 180
 chk $? 'registration'
 
 # Summarize

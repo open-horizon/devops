@@ -45,7 +45,7 @@ export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
 export SDO_SAMPLE_MFG_KEEP_SVCS=${SDO_SAMPLE_MFG_KEEP_SVCS:-true}
 export SDO_MFG_IMAGE_TAG=${SDO_MFG_IMAGE_TAG:-latest}
 #export SDO_SUPPORT_REPO=${SDO_SUPPORT_REPO:-https://raw.githubusercontent.com/open-horizon/SDO-support/master}
-SDO_SUPPORT_RELEASE=${SDO_SUPPORT_RELEASE:-https://github.com/open-horizon/SDO-support/releases/download/v1.8}   #todo: change default to releases/latest/download once 1.9 is working
+SDO_SUPPORT_RELEASE=${SDO_SUPPORT_RELEASE:-https://github.com/open-horizon/SDO-support/releases/latest/download}
 SDO_TO0_WAIT=${SDO_TO0_WAIT:-3}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
 
 CURL_OUTPUT_FILE=/tmp/horizon/curlExchangeOutput

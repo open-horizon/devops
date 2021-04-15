@@ -4,20 +4,17 @@
 
 This enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
 
-Run the following command to deploy the Horizon components on your current host.
+Read the notes, and then run the following command to deploy the Horizon components on your current host.
 
 **Notes:**
 
-- The main script is currently **only supported on Ubuntu 18.x, Ubuntu 20.x and macOS**
-  - The SDO test `test-sdo.sh` is only supported on Ubuntu 18.x
-- The command below must be **run as root**. If you need to use **sudo** to become root, run `sudo -i`, and then run the command below as shown.
-- If running on **Ubuntu** or any other distribution with the **Snap** package manager:
-  - This script is not yet compatible with Docker installed via Snap. Please use this script only with non-Snap versions of Docker. Alternatively, remove the existing Docker snap if feasible and allow the script to reinstall the latest version of Docker.
-- If running on **macOS**:
-  - You must [install docker](https://docs.docker.com/docker-for-mac/install) yourself before running this script.
-  - You must install prerequisites: jq, gettext, and socat. If you have [brew](https://brew.sh/) installed, you can install these prerequisites with: `brew install jq gettext socat`
-  - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. I made some of the recommended changes to this script and made some recommended changes to my docker settings (removed all the File Sharing paths except /private, disabled debug and experimental, and moved up to the Edge release). This enabled me to get past the problem, but I'm not sure if others will hit it or not.
-- The script can be run without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) (just passed the usage and command line parsing) for all of the environment variables that can be overridden. All of the `*_PW` and `*_TOKEN` environment variables can be overridden, and any variable in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
+- Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, and macOS**
+- This script is not yet compatible with docker installed via Snap. If docker has already been installed via Snap, remove the existing docker snap and allow the script to reinstall the latest version of docker.
+- The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. Making some of the recommended changes to my docker version and settings enabled me to get past the problem, but I'm not sure if others will hit it or not.
+- The script can be run as shown without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) (just passed the usage and command line parsing) for all of the environment variables that can be overridden. All of the `*_PW` and `*_TOKEN` environment variables can be overridden, and any variable in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
+- If you run this script 2 times in a row, a couple errors occur. See [this issue](https://github.com/open-horizon/devops/issues/51) for details.
+
+As **root** run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
@@ -26,6 +23,8 @@ curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/
 ### <a id=all-in-1-what-next></a> What To Do Next
 
 After the Horizon components have successfully deployed, here are some commands you can run:
+
+#### Horizon Agent Commands
 
 - View the status of your edge node: `hzn node list`
 - View the agreement that was made to run the helloworld edge service example: `hzn agreement list`
@@ -36,12 +35,11 @@ After the Horizon components have successfully deployed, here are some commands 
 - View the steps performed in the agreement negotiation process: `hzn eventlog list`
 - View the node policy that was set that caused the helloworld service to deployed: `hzn policy list`
 
-To view resources in the Horizon exchange, first export environment variables `HZN_ORG_ID` and `HZN_EXCHANGE_USER_AUTH` as instructed in the output of `deploy-mgmt-hub.sh`.
+#### Horizon Exchange Commands
 
-Then you can run these commands:
+To view resources in the Horizon exchange, first export environment variables `HZN_ORG_ID` and `HZN_EXCHANGE_USER_AUTH` as instructed in the output of `deploy-mgmt-hub.sh`. Then you can run these commands:
 
-- View all of the `hzn` sub-commands available: `hzn --help`
-  - You can view help on specific sub-commands too, for example: `hzn exchange service --help`
+- View all of the `hzn exchange` sub-commands available: `hzn exchange --help`
 - View the example edge services: `hzn exchange service list IBM/`
 - View the example patterns: `hzn exchange pattern list IBM/`
 - View the example deployment policies: `hzn exchange deployment listpolicy`
@@ -67,23 +65,44 @@ Then you can run these commands:
 - View the meta-data of the file: `hzn mms object list -d`
 - Get the file: `hzn mms object download -t stuff -i mms-file -f mms-file.downloaded`
 
-You can view more resources in the Horizon org by changing the environment variables:
+#### Horizon Exchange System Org Commands
+
+You can view more resources in the system org by switching to the admin user in that org:
 
 ```bash
-export HZN_ORG_ID=IBM   # or whatever org name you customized it to
-export HZN_EXCHANGE_USER_AUTH=admin:<password>
+export HZN_ORG_ID=IBM   # or whatever org name you customized EXCHANGE_SYSTEM_ORG to
+export HZN_EXCHANGE_USER_AUTH=admin:<password>   # the pw the script displayed, or what you set EXCHANGE_SYSTEM_ADMIN_PW to
 ```
 
 Then you can run these commands:
 
-- View the user in the Horizon org: `hzn exchange user list`
+- View the user in the system org: `hzn exchange user list`
 - View the agbot: `hzn exchange agbot list`
-- View the deployment policies the is agbot serving: `hzn exchange agbot listdeploymentpol agbot`
-- View the patterns the is agbot serving: `hzn exchange agbot listpattern agbot`
+- View the deployment policies the agbot is serving: `hzn exchange agbot listdeploymentpol agbot`
+- View the patterns the agbot is serving: `hzn exchange agbot listpattern agbot`
+
+#### Horizon Hub Admin Commands
+
+The hub admin can manage Horizon organizations (creating, reading, updating, and deleting them). Switch to the hub admin user:
+
+```bash
+export HZN_ORG_ID=root
+export HZN_EXCHANGE_USER_AUTH=hubadmin:<password>   # the pw the script displayed, or what you set EXCHANGE_HUB_ADMIN_PW to
+```
+
+Then you can run these commands:
+
+- List the organizations: `hzn exchange org list`
+- Create a new organization: `hzn exchange org create -d 'my new org' -a IBM/agbot myneworg`
+- Configure the agbot to be able to use the example services from this org: `hzn exchange agbot addpattern IBM/agbot IBM '*' myneworg`
+- View the patterns the agbot is serving: `hzn exchange agbot listpattern IBM/agbot`
+- View the deployment policies the agbot is serving: `hzn exchange agbot listdeploymentpol IBM/agbot`
 
 ### <a id=try-sdo></a> Try Out SDO
 
-[Intel's SDO](https://software.intel.com/en-us/secure-device-onboard) (Secure Device Onboard) technology can configure an edge device and register it with a Horizon instance automatically. Although this is not really necessary in this all-in-1 environment, because the agent has already been registered, you can easily try out SDO to see it working. **Note:** SDO doesn't make sense on a Mac, so it is only supported in this all-in-1 environment on Ubuntu 18.x.
+[Intel's SDO](https://software.intel.com/en-us/secure-device-onboard) (Secure Device Onboard) technology can configure an edge device and register it with a Horizon instance automatically. Although this is not really necessary in this all-in-1 environment (because the agent has already been registered), you can easily try out SDO to see it working.
+
+**Note:** SDO is currently only supported in this all-in-1 environment on Ubuntu.
 
 Export these environment variables:
 
