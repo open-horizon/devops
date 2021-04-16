@@ -771,6 +771,7 @@ fi
 # Create the user org and an admin user within it
 echo "Creating exchange user org and admin user..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG) != 200 ]]; then
+    # we set the heartbeat intervals lower than the defaults so agreements will be made faster (since there are only a few nodes)
     httpCode=$(exchangePost -d "{\"label\":\"$EXCHANGE_USER_ORG\",\"description\":\"$EXCHANGE_USER_ORG\",\"heartbeatIntervals\":{\"minInterval\":3,\"maxInterval\":10,\"intervalAdjustment\":1}}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
@@ -887,7 +888,7 @@ waitForAgent
 
 # if they previously registered, then unregister
 if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-    $HZN unregister -f $UNREGISTER_FLAGS
+    $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
     chk $? 'unregistration'
     waitForAgent
 fi

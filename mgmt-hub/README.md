@@ -12,7 +12,6 @@ Read the notes, and then run the following command to deploy the Horizon compone
 - This script is not yet compatible with docker installed via Snap. If docker has already been installed via Snap, remove the existing docker snap and allow the script to reinstall the latest version of docker.
 - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. Making some of the recommended changes to my docker version and settings enabled me to get past the problem, but I'm not sure if others will hit it or not.
 - The script can be run as shown without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) (just passed the usage and command line parsing) for all of the environment variables that can be overridden. All of the `*_PW` and `*_TOKEN` environment variables can be overridden, and any variable in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
-- If you run this script 2 times in a row, a couple errors occur. See [this issue](https://github.com/open-horizon/devops/issues/51) for details.
 
 As **root** run:
 
