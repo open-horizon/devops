@@ -16,7 +16,7 @@ Deploys the Open Horizon management hub services, agent, and CLI on this host. C
 
 Flags:
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
-  -P    Purge (delete) the persistent volumes of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
+  -P    Purge (delete) the persistent volumes and images of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
   -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
   -u    Update any container whose specified version is not currently running.
   -r <container>   Have docker-compose restart the specified container.
@@ -31,14 +31,14 @@ EndOfMessage
 
 # Get current hardware architecture
 export ARCH=$(uname -m | sed -e 's/aarch64.*/arm64/' -e 's/x86_64.*/amd64/' -e 's/armv.*/arm/')
-if [ "${ARCH}" = "ppc64le" ]; then
+if [[ $ARCH == "ppc64le" ]]; then
     export ARCH_DEB=ppc64el
 else
     export ARCH_DEB="${ARCH}"
 fi
 
 # Set the correct default value for docker-compose command regarding to architecture
-if [ "${ARCH}" = "amd64" ]; then
+if [[ $ARCH == "amd64" ]]; then
     export DOCKER_COMPOSE_CMD="docker-compose"
 else    # ppc64le
     export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
@@ -307,7 +307,7 @@ isCmdInstalled() {
     command -v $cmd >/dev/null 2>&1
     local ret=$?
     # Special addition for python-based version of docker-compose
-    if [ $ret != "0" ] && [ $cmd = "docker-compose" ]; then
+    if [[ $ret -ne 0 && $cmd == "docker-compose" ]]; then
         ${DOCKER_COMPOSE_CMD} version --short >/dev/null 2>&1
         ret=$?
     fi
@@ -479,7 +479,11 @@ if [[ -n "$STOP" ]]; then
     echo "Stopping the Horizon agent..."
     if isMacOS; then
         /usr/local/bin/horizon-container stop
-        # we don't currently have a way to uninstall the horizon and horizon-cli mac pkgs
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon agent..."
+            /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
+            runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
+        fi
     else   # ubuntu and redhat
         systemctl stop horizon
         if [[ -n "$PURGE" ]]; then
@@ -497,8 +501,8 @@ if [[ -n "$STOP" ]]; then
     ${DOCKER_COMPOSE_CMD} down $purgeFlag
 
     if [[ -n "$PURGE" ]]; then
-        echo "Removing Open-horizon Docker images"
-        runCmdQuietly docker rmi $(docker images openhorizon/* -q)
+        echo "Removing Open-horizon Docker images..."
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
     fi
     exit
 fi
@@ -576,9 +580,9 @@ else   # ubuntu and redhat
             chk $? 'adding docker repository key'
             add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
             chk $? 'adding docker repository'
-            if [ "${ARCH}" = "amd64" ]; then
+            if [[ $ARCH == "amd64" ]]; then
                 ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
-            elif [ "${ARCH}" = "ppc64le" ]; then
+            elif [[ $ARCH == "ppc64le" ]]; then
                 if isUbuntu18; then
                     ${PKG_MNGR} install -y docker-ce containerd.io
                 else # Ubuntu 20
@@ -591,7 +595,7 @@ else   # ubuntu and redhat
         else # redhat
             OP_REPO_ID="Open-Power"
             IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
-            if [ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]; then
+            if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
                 # Add OpenPower repo with ID Open-Power
                 cat > /etc/yum.repos.d/open-power.repo << EOFREPO
 [Open-Power]
@@ -613,7 +617,7 @@ EOFREPO
             fi
             ${PKG_MNGR} install -y docker-ce-${DOC_CE_VER} docker-ce-cli-${DOC_CE_CLI_VER} containerd
             chk $? 'installing docker'
-            if isRedHat79 && [ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]; then
+            if isRedHat79 && [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
                 # Fix yum update for el7 version of Docker packages in RHEL 7.9
                 echo "exclude=docker-ce docker-ce-cli" >> /etc/yum.repos.d/open-power.repo
                 chk $? 'excluding docker-ce docker-ce-cli in Open-Power repo'
@@ -630,7 +634,7 @@ EOFREPO
             exit 2
         fi
         echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
-        if [ "${ARCH}" = "amd64" ]; then
+        if [[ "${ARCH}" == "amd64" ]]; then
             # Install docker-compose from its github repo, because that is the only way to get a recent enough version
             curl --progress-bar -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             chk $? 'downloading docker-compose'
@@ -639,7 +643,7 @@ EOFREPO
             ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
             chk $? 'linking docker-compose to /usr/bin'
 	        export DOCKER_COMPOSE_CMD="docker-compose"
-        elif [ "${ARCH}" = "ppc64le" ]; then
+        elif [[ "${ARCH}" == "ppc64le" ]]; then
             # Install docker-compose for ppc64le platform (python-based)
             ${PKG_MNGR} install -y python3 python3-pip
             chk $? 'installing python3 and pip'
@@ -747,6 +751,9 @@ else
 fi
 
 # Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs
+if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot) == 200 ]]; then
+    restartAgbot='true'   # we may be changing its token, so need to restart it. (If there is initially no agbot resource, the agbot will just wait until it appears)
+fi
 httpCode=$(exchangePut -d "{\"token\":\"$AGBOT_TOKEN\",\"name\":\"agbot\",\"publicKey\":\"\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot)
 chkHttp $? $httpCode 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/patterns)
@@ -756,9 +763,15 @@ chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/pat
 httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"businessPol\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols)
 chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/agbot/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 
+if [[ $restartAgbot == 'true' ]]; then
+    ${DOCKER_COMPOSE_CMD} restart -t 10 agbot   # docker-compose will print that it is restarting the agbot
+    chk $? 'restarting agbot service'
+fi
+
 # Create the user org and an admin user within it
 echo "Creating exchange user org and admin user..."
 if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG) != 200 ]]; then
+    # we set the heartbeat intervals lower than the defaults so agreements will be made faster (since there are only a few nodes)
     httpCode=$(exchangePost -d "{\"label\":\"$EXCHANGE_USER_ORG\",\"description\":\"$EXCHANGE_USER_ORG\",\"heartbeatIntervals\":{\"minInterval\":3,\"maxInterval\":10,\"intervalAdjustment\":1}}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_USER_ORG)
     chkHttp $? $httpCode 201 "creating /orgs/$EXCHANGE_USER_ORG" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
@@ -875,7 +888,7 @@ waitForAgent
 
 # if they previously registered, then unregister
 if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-    $HZN unregister -f
+    $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
     chk $? 'unregistration'
     waitForAgent
 fi
