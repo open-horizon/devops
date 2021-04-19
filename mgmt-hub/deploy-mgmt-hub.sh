@@ -432,6 +432,14 @@ waitForAgent() {
     fi
 }
 
+function putOneFileInCss() {
+    local filename=${1:?} version=$2   # version is optional
+
+    echo "Publishing $filename in CSS as a public object in the IBM org..."
+    echo '{ "objectID":"'${filename##*/}'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | hzn mms -o IBM object publish -m- -f $filename
+    chk $? "publishing $filename in CSS as a public object"
+}
+
 #====================== End of Functions ======================
 
 # Set distro-dependent variables
@@ -866,11 +874,20 @@ else   # ubuntu and redhat
     chk $? 'restarting agent'
 fi
 
+# Add agent-install.cfg to CSS so agent-install.sh can be used to install edge nodes
+export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
+export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
+cat << EOF > $TMP_DIR/agent-install.cfg
+HZN_EXCHANGE_URL=http://${HZN_LISTEN_IP}:$EXCHANGE_PORT/v1
+HZN_FSS_CSSURL=http://${HZN_LISTEN_IP}:$CSS_PORT/
+EOF
+
+putOneFileInCss $TMP_DIR/agent-install.cfg
+
 # Prime exchange with horizon examples
 echo "----------- Creating developer key pair, and installing Horizon example services, policies, and patterns..."
 export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
-export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
-export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
+# HZN_EXCHANGE_USER_AUTH= and HZN_ORG_ID are set in the section above
 export HZN_EXCHANGE_URL=http://${MODIFIED_LISTEN_IP}:$EXCHANGE_PORT/v1
 if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/service.public.pem" ]]; then
     $HZN key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
@@ -921,6 +938,7 @@ echo "  3. Installed the Horizon agent and CLI (hzn)"
 echo "  4. Created a Horizon developer key pair"
 echo "  5. Installed the Horizon examples"
 echo "  6. Created and registered an edge node to run the helloworld example edge service"
+echo "  7. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
 fi
