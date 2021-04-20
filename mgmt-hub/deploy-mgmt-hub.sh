@@ -15,6 +15,7 @@ Deploys the Open Horizon management hub services, agent, and CLI on this host. C
 * Note: The support for ppc64le is experimental, because the management hub components are not yet generally available for ppc64le.
 
 Flags:
+  -A    Do not install the horizon agent package. (It will still install the horizon-cli package.) Without this flag, it will install and register the horizon agent (as well as all of the management hub services).
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
   -P    Purge (delete) the persistent volumes and images of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
   -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
@@ -46,8 +47,10 @@ else    # ppc64le
 fi
 
 # Parse cmd line
-while getopts ":SPsur:vh" opt; do
+while getopts ":ASPsur:vh" opt; do
 	case $opt in
+		A)  NO_AGENT=1
+		    ;;
 		S)  STOP=1
 		    ;;
 		P)  PURGE=1
@@ -484,19 +487,30 @@ if [[ -n "$STOP" ]]; then
         $HZN unregister -f
         chk $? 'unregistration'
     fi
-    echo "Stopping the Horizon agent..."
+
     if isMacOS; then
-        /usr/local/bin/horizon-container stop
-        if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon agent..."
-            /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
-            runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
+        if [[ -z $NO_AGENT ]]; then
+            /usr/local/bin/horizon-container stop
         fi
-    else   # ubuntu and redhat
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon CLI..."
+            /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
+            if [[ -z $NO_AGENT ]]; then
+                echo "Removing the Horizon agent image..."
+                runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
+            fi
+        fi
+    elif [[ -z $NO_AGENT  ]]; then   # ubuntu and redhat
+        echo "Stopping the Horizon agent..."
         systemctl stop horizon
         if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon agent..."
+            echo "Uninstalling the Horizon agent and CLI..."
             runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli
+        fi
+    else   # ubuntu and redhat, but only cli
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon CLI..."
+            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon-cli
         fi
     fi
 
@@ -522,11 +536,13 @@ if [[ -n "$START" ]]; then
     ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'starting docker-compose services'
 
-    echo "Starting the Horizon agent..."
-    if isMacOS; then
-        /usr/local/bin/horizon-container start
-    else   # ubuntu and redhat
-        systemctl start horizon
+    if [[ -z $NO_AGENT ]]; then
+        echo "Starting the Horizon agent..."
+        if isMacOS; then
+            /usr/local/bin/horizon-container start
+        else   # ubuntu and redhat
+            systemctl start horizon
+        fi
     fi
     exit
 fi
@@ -811,13 +827,18 @@ else   # ubuntu and redhat
         getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_DEB_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR
         tar -zxf $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.deb
         chk $? 'extracting pkg tar file'
-        echo "Installing the Horizon agent and CLI packages..."
-        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $TMP_DIR/pkgs/horizon*.deb
+        if [[ -z $NO_AGENT ]]; then
+            echo "Installing the Horizon agent and CLI packages..."
+            horizonPkgs=$(ls $TMP_DIR/pkgs/horizon*.deb)
+        else   # only horizon-cli
+            echo "Installing the Horizon CLI package..."
+            horizonPkgs=$(ls $TMP_DIR/pkgs/horizon-cli*.deb)
+        fi
+        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $horizonPkgs
     else # redhat
         getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
         tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
         chk $? 'extracting pkg tar file'
-        echo "Installing the Horizon agent and CLI packages..."
         # Before install delete horizon-cli package if needed
         PKG_NAME=horizon-cli
         ${PKG_MNGR} list installed ${PKG_NAME} >/dev/null 2>&1
@@ -830,7 +851,14 @@ else   # ubuntu and redhat
         if [[ $? -eq 0 ]]; then
             runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} ${PKG_NAME}
         fi
-        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $TMP_DIR/pkgs/horizon*.rpm
+        if [[ -z $NO_AGENT ]]; then
+            echo "Installing the Horizon agent and CLI packages..."
+            horizonPkgs=$(ls $TMP_DIR/pkgs/horizon*.rpm)
+        else   # only horizon-cli
+            echo "Installing the Horizon CLI package..."
+            horizonPkgs=$(ls $TMP_DIR/pkgs/horizon-cli*.rpm)
+        fi
+        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $horizonPkgs
     fi
 fi
 add_autocomplete
@@ -858,20 +886,22 @@ EOF
 
 unset HZN_EXCHANGE_URL   # use the value in /etc/default/horizon
 
-# start or restart the agent
-if isMacOS; then
-    if isDockerContainerRunning horizon1; then
-        echo "Restarting the Horizon agent container..."
-        /usr/local/bin/horizon-container update
+if [[ -z $NO_AGENT ]]; then
+    # start or restart the agent
+    if isMacOS; then
+        if isDockerContainerRunning horizon1; then
+            echo "Restarting the Horizon agent container..."
+            /usr/local/bin/horizon-container update
+            chk $? 'restarting agent'
+        else
+            echo "Starting the Horizon agent container..."
+            /usr/local/bin/horizon-container start
+            chk $? 'starting agent'
+        fi
+    else   # ubuntu and redhat
+        systemctl restart horizon.service
         chk $? 'restarting agent'
-    else
-        echo "Starting the Horizon agent container..."
-        /usr/local/bin/horizon-container start
-        chk $? 'starting agent'
     fi
-else   # ubuntu and redhat
-    systemctl restart horizon.service
-    chk $? 'restarting agent'
 fi
 
 # Add agent-install.cfg to CSS so agent-install.sh can be used to install edge nodes
@@ -898,19 +928,21 @@ curl -sSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_U
 chk $? 'publishing examples'
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
-# Register the agent
-echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
-getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
-waitForAgent
-
-# if they previously registered, then unregister
-if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-    $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
-    chk $? 'unregistration'
+if [[ -z $NO_AGENT ]]; then
+    # Register the agent
+    echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
+    getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
     waitForAgent
+
+    # if they previously registered, then unregister
+    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
+        $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
+        chk $? 'unregistration'
+        waitForAgent
+    fi
+    $HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 180
+    chk $? 'registration'
 fi
-$HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 180
-chk $? 'registration'
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
@@ -934,11 +966,18 @@ fi
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "     Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
 fi
-echo "  3. Installed the Horizon agent and CLI (hzn)"
+if [[ -z $NO_AGENT ]]; then
+    echo "  3. Installed the Horizon agent and CLI (hzn)"
+else   # only cli
+    echo "  3. Installed the Horizon CLI (hzn)"
+fi
 echo "  4. Created a Horizon developer key pair"
 echo "  5. Installed the Horizon examples"
-echo "  6. Created and registered an edge node to run the helloworld example edge service"
-echo "  7. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
+if [[ -z $NO_AGENT ]]; then
+    echo "  6. Created and registered an edge node to run the helloworld example edge service"
+    nextNum='7'
+fi
+echo "  ${nextNum:-6}. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
 fi

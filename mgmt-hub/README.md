@@ -25,6 +25,8 @@ After the Horizon components have successfully deployed, here are some commands 
 
 #### Horizon Agent Commands
 
+Note: If you used the `deploy-mgmt-hub.sh -A` flag, the commands in this section won't be available.
+
 - View the status of your edge node: `hzn node list`
 - View the agreement that was made to run the helloworld edge service example: `hzn agreement list`
 - View the edge service containers that Horizon started: `docker ps`
