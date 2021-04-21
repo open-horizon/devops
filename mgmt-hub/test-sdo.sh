@@ -115,6 +115,14 @@ isUbuntu18() {
 	fi
 }
 
+isUbuntu20() {
+    if [[ "$(lsb_release -d 2>/dev/null | awk '{print $2" "$3}')" == 'Ubuntu 20.'* ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
 # Run a command that does not have a good quiet option, so we have to capture the output and only show if an error occurs
 runCmdQuietly() {
     # all of the args to this function are the cmd and its args
@@ -155,8 +163,8 @@ getUrlFile() {
 
 # Verify input and host
 ensureWeAreRoot
-if ! isUbuntu18; then
-    fatal 1 "the host must be Ubuntu 18.x"
+if ! isUbuntu18 && ! isUbuntu20; then
+    fatal 1 "the host must be Ubuntu 18.x or 20.x"
 fi
 
 # Get the IP the services are listening on from the exchange url
