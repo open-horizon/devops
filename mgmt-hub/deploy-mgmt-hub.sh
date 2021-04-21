@@ -11,7 +11,7 @@ Deploys the Open Horizon management hub services, agent, and CLI on this host. C
 
 * Ubuntu 18.x and 20.x (amd64, ppc64le)
 * macOS (experimental)
-* RHEL 7.9 and RHEL 8.x (ppc64le)
+* RHEL 8.x (ppc64le)
 * Note: The support for ppc64le is experimental, because the management hub components are not yet generally available for ppc64le.
 
 Flags:
@@ -43,7 +43,6 @@ if [[ $ARCH == "amd64" ]]; then
     export DOCKER_COMPOSE_CMD="docker-compose"
 else    # ppc64le
     export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
-    unset LC_CTYPE  # Fix wrong locale setting in RHEL 7.9? for pipenv utility
 fi
 
 # Parse cmd line
@@ -251,16 +250,8 @@ isUbuntu18() {
 	fi
 }
 
-isRedHat79() {
-    if [[ "$DISTRO" == 'rhel 7.9' ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
-		return 0
-	else
-		return 1
-	fi
-}
-
-isRedHat83() {
-    if [[ "$DISTRO" == 'rhel 8.3' ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
+isRedHat8() {
+    if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
 		return 0
 	else
 		return 1
@@ -463,7 +454,7 @@ if isUbuntu18 || isUbuntu20; then
     export PKG_MNGR_PURGE_CMD="purge -yq"
     export PKG_MNGR_GETTEXT="gettext-base"
 else   # redhat
-    export PKG_MNGR=yum
+    export PKG_MNGR=dnf
     export PKG_MNGR_INSTALL_QY_CMD="install -y -q"
     export PKG_MNGR_PURGE_CMD="erase -y -q"
     export PKG_MNGR_GETTEXT="gettext"
@@ -575,8 +566,8 @@ if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
 fi
 ensureWeAreRoot
 
-if ! isMacOS && ! isUbuntu18 && ! isRedHat79 && ! isUbuntu20 && ! isRedHat83; then
-    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 7.9 (ppc64le) or RedHat 8.3 (ppc64le)"
+if ! isMacOS && ! isUbuntu18 && ! isUbuntu20 && ! isRedHat8; then
+    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
 fi
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
 echo "Management hub services will listen on $HZN_LISTEN_IP"
@@ -616,7 +607,7 @@ else   # ubuntu and redhat
 	            fatal 1 "hardware plarform ${ARCH} is not supported yet"
             fi
             chk $? 'installing docker'
-        else # redhat
+        else # redhat (ppc64le)
             OP_REPO_ID="Open-Power"
             IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
             if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
@@ -632,20 +623,8 @@ gpgkey=https://oplab9.parqtec.unicamp.br/pub/key/openpower-gpgkey-public.asc
 EOFREPO
                 runCmdQuietly ${PKG_MNGR} update -q -y
             fi
-            DOC_CE_VER=$(yum list available docker-ce | grep docker-ce | awk '{ printf "%s\n", $2 }' | cut -d":" -f2)
-            DOC_CE_CLI_VER=$(yum list available docker-ce-cli | grep docker-ce | awk '{ printf "%s\n", $2 }' | cut -d":" -f2)
-            if isRedHat79; then
-                # Update Docker packages to .el7 version in RHEL 7.9
-                DOC_CE_VER=${DOC_CE_VER/%.el8/.el7}
-                DOC_CE_CLI_VER=${DOC_CE_CLI_VER/%.el8/.el7}
-            fi
-            ${PKG_MNGR} install -y docker-ce-${DOC_CE_VER} docker-ce-cli-${DOC_CE_CLI_VER} containerd
+            ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd
             chk $? 'installing docker'
-            if isRedHat79 && [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
-                # Fix yum update for el7 version of Docker packages in RHEL 7.9
-                echo "exclude=docker-ce docker-ce-cli" >> /etc/yum.repos.d/open-power.repo
-                chk $? 'excluding docker-ce docker-ce-cli in Open-Power repo'
-            fi
             systemctl --now --quiet enable docker
             chk $? 'starting docker'
         fi
@@ -839,26 +818,27 @@ else   # ubuntu and redhat
         getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
         tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
         chk $? 'extracting pkg tar file'
-        # Before install delete horizon-cli package if needed
-        PKG_NAME=horizon-cli
-        ${PKG_MNGR} list installed ${PKG_NAME} >/dev/null 2>&1
-        if [[ $? -eq 0 ]]; then
-            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} ${PKG_NAME}
-        fi
-        # Before install delete horizon package if needed
-        PKG_NAME=horizon
-        ${PKG_MNGR} list installed ${PKG_NAME} >/dev/null 2>&1
-        if [[ $? -eq 0 ]]; then
-            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} ${PKG_NAME}
-        fi
+        echo "Installing the Horizon agent and CLI packages..."
         if [[ -z $NO_AGENT ]]; then
             echo "Installing the Horizon agent and CLI packages..."
-            horizonPkgs=$(ls $TMP_DIR/pkgs/horizon*.rpm)
+            horizonPkgs="horizon-cli horizon"
         else   # only horizon-cli
             echo "Installing the Horizon CLI package..."
-            horizonPkgs=$(ls $TMP_DIR/pkgs/horizon-cli*.rpm)
+            horizonPkgs="horizon-cli"
         fi
-        runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $horizonPkgs
+        for pkg in $horizonPkgs
+        do
+            PKG_NAME=${pkg}
+            ${PKG_MNGR} list installed ${PKG_NAME} >/dev/null 2>&1
+            if [[ $? -eq 0 ]]; then
+                # Already installed: prohibit possible downgrade but return 0 in that case
+                INSTALL_CMD="upgrade -y -q"
+            else
+                # Install the first time
+                INSTALL_CMD="${PKG_MNGR_INSTALL_QY_CMD}"
+            fi
+            runCmdQuietly ${PKG_MNGR} ${INSTALL_CMD} $TMP_DIR/pkgs/${PKG_NAME}-[0-9]*.rpm
+        done
     fi
 fi
 add_autocomplete
