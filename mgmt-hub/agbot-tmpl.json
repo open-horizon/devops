@@ -32,7 +32,7 @@
         "ActiveDeviceTimeoutS": 180,
         "DefaultWorkloadPW": "",
         "MessageKeyPath": "msgKey",
-        "APIListen": "127.0.0.1:8080",
+        "APIListen": "0.0.0.0:8080",
         "PurgeArchivedAgreementHours": 1,
         "CheckUpdatedPolicyS": 7,
         "CSSURL": "${HZN_TRANSPORT}://css-api:8080",
