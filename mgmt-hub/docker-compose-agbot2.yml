@@ -1,0 +1,39 @@
+version: "3"
+
+# Listing the volumes here makes them persistent across container restarts
+volumes:
+  agbotmsgkeyvol:
+
+networks:
+  horizonnet:
+    driver: bridge
+
+services:
+
+  agbot2:
+    image: ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
+    container_name: agbot2
+    restart: always
+    ports:
+      - 127.0.0.1:${AGBOT2_PORT}:8080
+      - ${HZN_LISTEN_IP}:${AGBOT2_SECURE_PORT}:8083
+    networks:
+      - horizonnet
+    volumes:
+      - ${ETC}/horizon/agbot.json:/etc/horizon/anax.json.tmpl:${VOLUME_MODE}
+      # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
+      - agbotmsgkeyvol:/var/horizon/msgKey
+    #environment:
+    # HZN_VAR_BASE will default to /var/horizon, which is what we want
+    #  - HZN_VAR_BASE=/home/agbotuser
+    healthcheck:
+      # Need to wait a while for this, because the deployment script does not add the org, user, agbot until after the containers are up
+      test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/status) -eq 200
+      interval: 20s
+      timeout: 5s
+      retries: 4
+    depends_on:
+      - exchange-api
+      - css-api
+      - postgres
+    

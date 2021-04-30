@@ -115,7 +115,7 @@ Then on each edge node:
 export HZN_ORG_ID=myorg   # or whatever you customized it to
 export HZN_EXCHANGE_USER_AUTH=admin:<admin-pw>   # use the pw deploy-mgmt-hub.sh displayed
 export HZN_FSS_CSSURL=http://<mgmt-hub-host>:9443/
-curl -sSL https://raw.githubusercontent.com/open-horizon/anax/master/agent-install/agent-install.sh | bash -s -- -i anax: -k css: -p IBM/pattern-ibm.helloworld -w '*' -T 120
+curl -sSL https://github.com/open-horizon/anax/releases/latest/download/agent-install.sh | bash -s -- -i anax: -k css: -p IBM/pattern-ibm.helloworld -w '*' -T 120
 ```
 
 When complete, you can run `hzn exchange node list` to see your new nodes.

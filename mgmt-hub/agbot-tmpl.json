@@ -32,10 +32,10 @@
         "ActiveDeviceTimeoutS": 180,
         "DefaultWorkloadPW": "",
         "MessageKeyPath": "msgKey",
-        "APIListen": "0.0.0.0:${AGBOT_PORT}",
+        "APIListen": "127.0.0.1:8080",
         "PurgeArchivedAgreementHours": 1,
         "CheckUpdatedPolicyS": 7,
-        "CSSURL": "${HZN_TRANSPORT}://css-api:${CSS_PORT}",
+        "CSSURL": "${HZN_TRANSPORT}://css-api:8080",
         "SecureAPIListenHost": "0.0.0.0",
         "SecureAPIListenPort": "8083",
         "AgreementBatchSize": 1300

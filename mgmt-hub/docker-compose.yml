@@ -18,7 +18,8 @@ services:
     container_name: agbot
     restart: always
     ports:
-      - ${HZN_LISTEN_IP}:${AGBOT_PORT}:${AGBOT_PORT}
+      - 127.0.0.1:${AGBOT_PORT}:8080
+      - ${HZN_LISTEN_IP}:${AGBOT_SECURE_PORT}:8083
     networks:
       - horizonnet
     volumes:
@@ -30,7 +31,7 @@ services:
     #  - HZN_VAR_BASE=/home/agbotuser
     healthcheck:
       # Need to wait a while for this, because the deployment script does not add the org, user, agbot until after the containers are up
-      test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:${AGBOT_PORT}/status) -eq 200
+      test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/status) -eq 200
       interval: 20s
       timeout: 5s
       retries: 4
@@ -84,7 +85,7 @@ services:
     container_name: css-api
     restart: always
     ports:
-      - ${HZN_LISTEN_IP}:${CSS_PORT}:${CSS_PORT}
+      - ${HZN_LISTEN_IP}:${CSS_PORT}:8080
     networks:
       - horizonnet
     volumes:
@@ -94,7 +95,7 @@ services:
     environment:
       - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
     healthcheck:
-      test: test $$(curl -sS -w %{http_code} -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null http://localhost:${CSS_PORT}/api/v1/health) -eq 200
+      test: test $$(curl -sS -w %{http_code} -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null http://localhost:8080/api/v1/health) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3
