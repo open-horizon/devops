@@ -5,9 +5,9 @@
 usage() {
     exitCode=${1:-0}
     cat << EndOfMessage
-Usage: ${0##*/} [-h] [-v] [-s | -u | -S | -r <container>] [-P]
+Usage: ${0##*/} [-c <config-file>] [-A] [-v] [-h] [-s | -u | -S [-P] | -r <container>]
 
-Deploys the Open Horizon management hub services, agent, and CLI on this host. Currently supports the following operating systems:
+Deploy the Open Horizon management hub services, agent, and CLI on this host. Currently supports the following operating systems:
 
 * Ubuntu 18.x and 20.x (amd64, ppc64le)
 * macOS (experimental)
@@ -15,6 +15,7 @@ Deploys the Open Horizon management hub services, agent, and CLI on this host. C
 * Note: The support for ppc64le is experimental, because the management hub components are not yet generally available for ppc64le.
 
 Flags:
+  -c <config-file>   A config file with lines in the form variable=value that set any of the environment variables supported by this script. Takes precedence over the same variables passed in through the environment.
   -A    Do not install the horizon agent package. (It will still install the horizon-cli package.) Without this flag, it will install and register the horizon agent (as well as all of the management hub services).
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
   -P    Purge (delete) the persistent volumes and images of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
@@ -46,8 +47,10 @@ else    # ppc64le
 fi
 
 # Parse cmd line
-while getopts ":ASPsur:vh" opt; do
+while getopts ":c:ASPsur:vh" opt; do
 	case $opt in
+		c)  CONFIG_FILE="$OPTARG"
+		    ;;
 		A)  NO_AGENT=1
 		    ;;
 		S)  STOP=1
@@ -70,6 +73,19 @@ while getopts ":ASPsur:vh" opt; do
 		    ;;
 	esac
 done
+
+# Read config file, if specified. This will override any corresponding variables from the environment.
+# After this, the default values of env vars not set will be set below.
+if [[ -n $CONFIG_FILE ]]; then
+    if [[ ! -f $CONFIG_FILE ]]; then
+        echo "$CONFIG_FILE does not exist"; exit 1
+    fi
+    echo "Reading configuration file $CONFIG_FILE ..."
+    set -a   # export all variable assignments until further notice
+    source "$CONFIG_FILE"
+    if [[ $? -ne 0 ]]; then echo "there are errors in $CONFIG_FILE"; exit 1; fi   # source seems to return 0 even when there is an error in the file
+    set +a   # undoes the automatic exporting
+fi
 
 # Default environment variables that can be overridden. Note: most of them have to be exported for envsubst to use when processing the template files.
 
@@ -126,8 +142,17 @@ export EXCHANGE_WAIT_INTERVAL=${EXCHANGE_WAIT_INTERVAL:-2}   # number of seconds
 
 export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-openhorizon/${ARCH}_agbot}
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
-export AGBOT_PORT=${AGBOT_PORT:-3091}
 export AGBOT_ID=${AGBOT_ID:-agbot}   # its agbot id in the exchange
+export AGBOT_PORT=${AGBOT_PORT:-3110}   #todo: should we not expose this to anything but localhost?
+export AGBOT_SECURE_PORT=${AGBOT_SECURE_PORT:-3111}   # the externally accessible port
+# Note: several alternatives were explored for deploying a 2nd agbot:
+#   - the --scale flag: gave errors about port numbers and container names coonflicting
+#   - profiles: requires compose schema version 3.9 (1Q2021), docker-compose 1.28, and docker engine 20.10.5 (could switch to this eventually)
+#   - multiple docker-compose yml files: only include the 2nd one when the 2nd agbot is requested (chose this option)
+export START_SECOND_AGBOT=${START_SECOND_AGBOT:-false}   # a 2nd agbot is mostly used for e2edev testing
+if [[ $START_SECOND_AGBOT == 'true' ]]; then export COMPOSE_FILE='docker-compose.yml:docker-compose-agbot2.yml'; fi   # docker-compose will automatically use this
+export AGBOT2_PORT=${AGBOT2_PORT:-3120}
+export AGBOT2_SECURE_PORT=${AGBOT2_SECURE_PORT:-3121}
 
 export CSS_IMAGE_NAME=${CSS_IMAGE_NAME:-openhorizon/${ARCH}_cloud-sync-service}
 export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -197,8 +222,8 @@ fatal() {
 
 # Check the exit code passed in and exit if non-zero
 chk() {
-    local exitCode=$1
-    local task=$2
+    local exitCode=${1:?}
+    local task=${2:?}
     local dontExit=$3   # set to 'continue' to not exit for this error
     if [[ $exitCode == 0 ]]; then return; fi
     echo "Error: exit code $exitCode from: $task"
@@ -209,10 +234,10 @@ chk() {
 
 # Check both the exit code and http code passed in and exit if non-zero
 chkHttp() {
-    local exitCode=$1
-    local httpCode=$2
-    local goodHttpCodes=$3   # space or comma separate list of acceptable http codes
-    local task=$4
+    local exitCode=${1:?}
+    local httpCode=${2:?}
+    local goodHttpCodes=${3:?}   # space or comma separated list of acceptable http codes
+    local task=${4:?}
     local errorFile=$5   # optional: the file that has the curl error in it
     local outputFile=$6   # optional: the file that has the curl output in it (which sometimes has the error in it)
     local dontExit=$7   # optional: set to 'continue' to not exit for this error
@@ -267,12 +292,12 @@ isUbuntu20() {
 }
 
 isDirInPath() {
-    local dir="$1"
+    local dir=${1:?}
     echo $PATH | grep -q -E "(^|:)$dir(:|$)"
 }
 
 isDockerContainerRunning() {
-    local container="$1"
+    local container=${1:?}
     if [[ -n $(docker ps -q --filter name=$container) ]]; then
 		return 0
 	else
@@ -287,7 +312,7 @@ runCmdQuietly() {
         $*
         chk $? "running: $*"
     else
-        output=$($* 2>&1)
+        local output=$($* 2>&1)
         if [[ $? -ne 0 ]]; then
             echo "Error running $*: $output"
             exit 2
@@ -297,7 +322,7 @@ runCmdQuietly() {
 
 # Returns exit code 0 if the specified cmd is in the path
 isCmdInstalled() {
-    local cmd=$1
+    local cmd=${1:?}
     command -v $cmd >/dev/null 2>&1
     local ret=$?
     # Special addition for python-based version of docker-compose
@@ -320,13 +345,12 @@ areCmdsInstalled() {
 
 # Checks if docker-compose is installed, and if so, if it is at least this minimum version
 isDockerComposeAtLeast() {
-    : ${1:?}
-    local minVersion=$1
+    local minVersion=${1:?}
     if ! isCmdInstalled docker-compose; then
         return 1   # it is not even installed
     fi
     # docker-compose is installed, check its version
-    lowerVersion=$(echo -e "$(${DOCKER_COMPOSE_CMD} version --short)\n$minVersion" | sort -V | head -n1)
+    local lowerVersion=$(echo -e "$(${DOCKER_COMPOSE_CMD} version --short)\n$minVersion" | sort -V | head -n1)
     if [[ $lowerVersion == $minVersion ]]; then
         return 0   # the installed version was >= minVersion
     else
@@ -352,41 +376,62 @@ ensureWeAreRoot() {
 
 # Download a file via a URL
 getUrlFile() {
-    local url="$1"
-    local localFile="$2"
+    local url=${1:?}
+    local localFile=${2:?}
     verbose "Downloading $url ..."
     if [[ $url == *@* ]]; then
         # special case for development:
         scp $url $localFile
         chk $? "scp'ing $url"
     else
-        httpCode=$(curl -sS -w "%{http_code}" -L -o $localFile $url 2>$CURL_ERROR_FILE)
+        local httpCode=$(curl -sS -w "%{http_code}" -L -o $localFile $url 2>$CURL_ERROR_FILE)
         chkHttp $? $httpCode 200 "downloading $url" $CURL_ERROR_FILE $localFile
+    fi
+}
+
+# Always pull when the image tag is latest or testing. For other tags, try to pull, but if the image exists locally, but does not exist in the remote repo, do not report error.
+pullDockerImage() {
+    local imagePath=${1:?}
+    local imageTag=${imagePath##*:}
+    if [[ $imageTag =~ ^(latest|testing)$ || -z $(docker images -q $imagePath 2> /dev/null) ]]; then
+        echo "Pulling $imagePath ..."
+        runCmdQuietly docker pull ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
+    else
+        # Docker image exists locally. Try to pull, but only exit if pull fails for a reason other than 'not found'
+        echo "Trying to pull $imagePath ..."
+        local output=$(docker pull $imagePath 2>&1)
+        if [[ $? -ne 0 && $output != *'not found'* ]]; then
+            echo "Error running docker pull $imagePath: $output"
+            exit 2
+        fi
     fi
 }
 
 # Pull all of the docker images to ensure we have the most recent images locally
 pullImages() {
     # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
-    echo "Pulling ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}..."
-    runCmdQuietly docker pull ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
-    echo "Pulling ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}..."
-    runCmdQuietly docker pull ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
-    echo "Pulling ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}..."
-    runCmdQuietly docker pull ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
-    echo "Pulling ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}..."
-    runCmdQuietly docker pull ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
-    echo "Pulling ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}..."
-    runCmdQuietly docker pull ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
-    echo "Pulling ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}..."
-    runCmdQuietly docker pull ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
+    pullDockerImage ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
+    pullDockerImage ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
+    pullDockerImage ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
+    pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
+    pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
+    pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
 }
 
-# Find 1 of the private IPs of the host
+# Find 1 of the private IPs of the host - not currently used
 getPrivateIp() {
+    local ipCmd
     if isMacOS; then ipCmd=ifconfig
     else ipCmd='ip address'; fi
     $ipCmd | grep -m 1 -o -E "\sinet (172|10|192.168)[^/\s]*" | awk '{ print $2 }'
+}
+
+# Find 1 of the public IPs of the host
+getPublicIp() {
+    local ipCmd
+    if isMacOS; then ipCmd=ifconfig
+    else ipCmd='ip address'; fi
+    $ipCmd | grep -o -E "\sinet [^/\s]*" | grep -m 1 -v -E "\sinet (127|172|10|192.168)" | awk '{ print $2 }'
 }
 
 # Source the hzn autocomplete file
@@ -426,7 +471,7 @@ waitForAgent() {
     fi
 }
 
-function putOneFileInCss() {
+putOneFileInCss() {
     local filename=${1:?} version=$2   # version is optional
 
     echo "Publishing $filename in CSS as a public object in the IBM org..."
@@ -434,7 +479,7 @@ function putOneFileInCss() {
     chk $? "publishing $filename in CSS as a public object"
 }
 
-#====================== End of Functions ======================
+#====================== End of Functions, Start of Main ======================
 
 # Set distro-dependent variables
 if isMacOS; then
@@ -553,7 +598,7 @@ if [[ -n "$RESTART" ]]; then
         fatal 1 "-s or -S or -u cannot be specified with -r"
     fi
     echo "Restarting the $RESTART container..."
-    ${DOCKER_COMPOSE_CMD} restart -t 10 "$RESTART"
+    ${DOCKER_COMPOSE_CMD} restart -t 10 "$RESTART"   #todo: do not know if this will work if there are 2 agbots replicas running
     exit
 fi
 
@@ -633,8 +678,7 @@ EOFREPO
     minVersion=1.21.0
     if ! isDockerComposeAtLeast $minVersion; then
         if isCmdInstalled docker-compose; then
-            echo "Error: Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
-            exit 2
+            fatal 2 "Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
         fi
         echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
         if [[ "${ARCH}" == "amd64" ]]; then
@@ -668,6 +712,7 @@ if [[ $OH_DEVOPS_REPO == 'dontdownload' ]]; then
 else
     echo "----------- Downloading template files..."
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
+    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
@@ -846,21 +891,27 @@ add_autocomplete
 # Configure the agent/CLI
 echo "Configuring the Horizon agent and CLI..."
 if isMacOS; then
-    if [[ $HZN_LISTEN_IP == '127.0.0.1' || $HZN_LISTEN_IP == 'localhost' ]]; then
-        MODIFIED_LISTEN_IP=host.docker.internal  # so the agent in container can reach the host's localhost
+    if [[ $HZN_LISTEN_IP =~ ^(127.0.0.1|localhost|0.0.0.0)$ ]]; then
+        THIS_HOST_LISTEN_IP=host.docker.internal  # so the agent in container can reach the host's localhost
         if ! grep -q -E '^127.0.0.1\s+host.docker.internal(\s|$)' /etc/hosts; then
             echo '127.0.0.1 host.docker.internal' >> /etc/hosts   # the hzn cmd needs to be able to use the same HZN_EXCHANGE_URL and resolve it
         fi
     else
-        MODIFIED_LISTEN_IP="$HZN_LISTEN_IP"
+        THIS_HOST_LISTEN_IP="$HZN_LISTEN_IP"
     fi
 else   # ubuntu and redhat
-    MODIFIED_LISTEN_IP="$HZN_LISTEN_IP"
+    if [[ $HZN_LISTEN_IP == '0.0.0.0' ]]; then
+        THIS_HOST_LISTEN_IP="127.0.0.1"
+    else
+        THIS_HOST_LISTEN_IP="$HZN_LISTEN_IP"
+    fi
 fi
 mkdir -p /etc/default
 cat << EOF > /etc/default/horizon
-HZN_EXCHANGE_URL=http://${MODIFIED_LISTEN_IP}:$EXCHANGE_PORT/v1
-HZN_FSS_CSSURL=http://${MODIFIED_LISTEN_IP}:$CSS_PORT/
+HZN_EXCHANGE_URL=http://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
+HZN_FSS_CSSURL=http://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
+HZN_AGBOT_URL=http://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
+HZN_SDO_SVC_URL=http://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 EOF
 
@@ -885,11 +936,21 @@ if [[ -z $NO_AGENT ]]; then
 fi
 
 # Add agent-install.cfg to CSS so agent-install.sh can be used to install edge nodes
+if [[ $HZN_LISTEN_IP == '0.0.0.0' ]]; then
+    CFG_LISTEN_IP=$(getPublicIp)   # the agent-install.cfg in CSS is mostly for other edge nodes, so need to give them a public ip
+    if [[ -z $CFG_LISTEN_IP ]]; then
+        fatal 2 "can not find a public IP on this host, specify an explicit IP for HZN_LISTEN_IP, instead of $HZN_LISTEN_IP"
+    fi
+else
+    CFG_LISTEN_IP=$HZN_LISTEN_IP   # even if they are listening on a private IP, they can at least test agent-install.sh locally
+fi
 export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
 export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
 cat << EOF > $TMP_DIR/agent-install.cfg
-HZN_EXCHANGE_URL=http://${HZN_LISTEN_IP}:$EXCHANGE_PORT/v1
-HZN_FSS_CSSURL=http://${HZN_LISTEN_IP}:$CSS_PORT/
+HZN_EXCHANGE_URL=http://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
+HZN_FSS_CSSURL=http://${CFG_LISTEN_IP}:$CSS_PORT/
+HZN_AGBOT_URL=http://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
+HZN_SDO_SVC_URL=http://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
 EOF
 
 putOneFileInCss $TMP_DIR/agent-install.cfg
@@ -898,7 +959,7 @@ putOneFileInCss $TMP_DIR/agent-install.cfg
 echo "----------- Creating developer key pair, and installing Horizon example services, policies, and patterns..."
 export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
 # HZN_EXCHANGE_USER_AUTH= and HZN_ORG_ID are set in the section above
-export HZN_EXCHANGE_URL=http://${MODIFIED_LISTEN_IP}:$EXCHANGE_PORT/v1
+export HZN_EXCHANGE_URL=http://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
 if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/service.public.pem" ]]; then
     $HZN key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
     chk $? 'creating developer key pair'
