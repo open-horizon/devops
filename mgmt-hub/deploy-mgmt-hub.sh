@@ -301,7 +301,7 @@ isDirInPath() {
 }
 
 isWordInString() {   # returns true (0) if the specified word is in the space-separated string
-    local word=${1:?} string=${2:?}
+    local word=${1:?} string=$2
     if [[ $string =~ (^|[[:space:]])$word($|[[:space:]]) ]]; then
         return 0
     else
@@ -821,8 +821,10 @@ getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.js
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
 # leave a copy of ourself in the current dir for subsequent stop/start commands
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
-chmod +x deploy-mgmt-hub.sh
+if [[ ! -f deploy-mgmt-hub.sh ]]; then
+    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
+    chmod +x deploy-mgmt-hub.sh
+fi
 # also leave a copy of test-sdo.sh so they can run that afterward if they want to take SDO for a spin
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
 chmod +x test-sdo.sh
