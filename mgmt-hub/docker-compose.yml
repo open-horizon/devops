@@ -24,6 +24,8 @@ services:
       - horizonnet
     volumes:
       - ${ETC}/horizon/agbot.json:/etc/horizon/anax.json.tmpl:${VOLUME_MODE}
+      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+      - ${CERT_DIR}:/home/agbotuser/keys:${VOLUME_MODE}
       # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
       - agbotmsgkeyvol:/var/horizon/msgKey
     #environment:
@@ -90,12 +92,14 @@ services:
       - horizonnet
     volumes:
       - ${ETC}/horizon/css.conf:/etc/edge-sync-service/sync.conf.tmpl:${VOLUME_MODE}
-      #todo: why is this needed in this container?
-      - mongovol:/var/edge-sync-service/persist
+      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+      - ${CERT_DIR}:/home/cssuser/keys:${VOLUME_MODE}
+      #todo: i do not think this needed in this container?
+      #- mongovol:/var/edge-sync-service/persist
     environment:
-      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
+      - HZN_EXCHANGE_URL=http://exchange-api:8080/v1
     healthcheck:
-      test: test $$(curl -sS -w %{http_code} -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null http://localhost:8080/api/v1/health) -eq 200
+      test: test $$(curl -sS -w %{http_code} -k -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null ${HZN_TRANSPORT}://localhost:8080/api/v1/health) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3
@@ -129,10 +133,12 @@ services:
       - horizonnet
     volumes:
       - ocsdb:${SDO_OCS_DB_PATH}
+      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+      - ${CERT_DIR}:/home/sdouser/ocs-api-dir/keys:${VOLUME_MODE}
     # intentionally omitting HZN_MGMT_HUB_CERT from the environment section, since we use http in this environment
     environment:
-      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
-      - EXCHANGE_INTERNAL_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
+      - HZN_EXCHANGE_URL=http://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
+      - EXCHANGE_INTERNAL_URL=http://exchange-api:8080/v1
       - HZN_FSS_CSSURL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${CSS_PORT}/
       - HZN_ORG_ID=${EXCHANGE_USER_ORG}
       - SDO_OWNER_SVC_HOST=${HZN_LISTEN_IP}

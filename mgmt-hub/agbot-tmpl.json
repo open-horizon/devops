@@ -23,7 +23,7 @@
         "NewContractIntervalS": 5,
         "ProcessGovernanceIntervalS": 5,
         "IgnoreContractWithAttribs": "ethereum_account",
-        "ExchangeURL": "${HZN_TRANSPORT}://exchange-api:8080/v1",
+        "ExchangeURL": "http://exchange-api:8080/v1",
         "ExchangeId": "${EXCHANGE_SYSTEM_ORG}/${AGBOT_ID}",
         "ExchangeToken":"${AGBOT_TOKEN}",
         "ExchangeVersionCheckIntervalM": 1,
@@ -36,8 +36,11 @@
         "PurgeArchivedAgreementHours": 1,
         "CheckUpdatedPolicyS": 7,
         "CSSURL": "${HZN_TRANSPORT}://css-api:8080",
+        "CSSSSLCert": "${SECURE_API_SERVER_CERT}",
         "SecureAPIListenHost": "0.0.0.0",
         "SecureAPIListenPort": "8083",
+        "SecureAPIServerKey": "${SECURE_API_SERVER_KEY}",
+        "SecureAPIServerCert": "${SECURE_API_SERVER_CERT}",
         "AgreementBatchSize": 1300
     },
     "ArchSynonyms": {

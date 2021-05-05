@@ -128,8 +128,9 @@ if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     HZN_DEVICE_TOKEN_GENERATED=1
 fi
 
-export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP, altho this is not recommended, since the services use http.
-export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
+export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP.
+# You can also set HZN_LISTEN_PUBLIC_IP to the public IP if you want to set HZN_LISTEN_IP=0.0.0.0 but this script can't determine the public IP.
+export HZN_TRANSPORT=${HZN_TRANSPORT:-http}   # Note: setting this to https is experimental, still under development!!!!!!
 
 export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-openhorizon/${ARCH}_exchange-api}
 export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -202,6 +203,9 @@ CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
 SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
 DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
+IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'   # use it like: if [[ $host =~ $IP_REGEX ]]
+export CERT_DIR=/etc/horizon/keys
+export CERT_BASE_NAME=horizonMgmtHub
 
 #====================== Functions ======================
 
@@ -296,6 +300,15 @@ isDirInPath() {
     echo $PATH | grep -q -E "(^|:)$dir(:|$)"
 }
 
+isWordInString() {   # returns true (0) if the specified word is in the space-separated string
+    local word=${1:?} string=${2:?}
+    if [[ $string =~ (^|[[:space:]])$word($|[[:space:]]) ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 isDockerContainerRunning() {
     local container=${1:?}
     if [[ -n $(docker ps -q --filter name=$container) ]]; then
@@ -378,6 +391,10 @@ ensureWeAreRoot() {
 getUrlFile() {
     local url=${1:?}
     local localFile=${2:?}
+    if isWordInString "${url##*/}" "$OH_DONT_DOWNLOAD"; then
+        echo "Skipping download of $url"
+        return
+    fi
     verbose "Downloading $url ..."
     if [[ $url == *@* ]]; then
         # special case for development:
@@ -395,7 +412,7 @@ pullDockerImage() {
     local imageTag=${imagePath##*:}
     if [[ $imageTag =~ ^(latest|testing)$ || -z $(docker images -q $imagePath 2> /dev/null) ]]; then
         echo "Pulling $imagePath ..."
-        runCmdQuietly docker pull ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
+        runCmdQuietly docker pull $imagePath
     else
         # Docker image exists locally. Try to pull, but only exit if pull fails for a reason other than 'not found'
         echo "Trying to pull $imagePath ..."
@@ -428,10 +445,18 @@ getPrivateIp() {
 
 # Find 1 of the public IPs of the host
 getPublicIp() {
+    if [[ -n $HZN_LISTEN_PUBLIC_IP ]]; then
+        echo "$HZN_LISTEN_PUBLIC_IP"
+        return
+    fi
     local ipCmd
     if isMacOS; then ipCmd=ifconfig
     else ipCmd='ip address'; fi
     $ipCmd | grep -o -E "\sinet [^/\s]*" | grep -m 1 -v -E "\sinet (127|172|10|192.168)" | awk '{ print $2 }'
+}
+
+getAllIps() {   # get all of the IP addresses and return them as a comma-separated string
+    ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=, '{ print $2 }' | sed 's/,$//'
 }
 
 # Source the hzn autocomplete file
@@ -472,11 +497,66 @@ waitForAgent() {
 }
 
 putOneFileInCss() {
-    local filename=${1:?} version=$2   # version is optional
+    local filename=${1:?} objectID=$2 version=$3   # objectID and version are optional
+    if [[ -z $objectID ]]; then
+        objectID=${filename##*/}
+    fi
 
-    echo "Publishing $filename in CSS as a public object in the IBM org..."
-    echo '{ "objectID":"'${filename##*/}'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | hzn mms -o IBM object publish -m- -f $filename
+    echo "Publishing $filename in CSS as public object $objectID in the IBM org..."
+    echo '{ "objectID":"'$objectID'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | $HZN mms -o IBM object publish -m- -f $filename
     chk $? "publishing $filename in CSS as a public object"
+}
+
+isCertForHost() {   # Not currently used!! Return true (0) if the current cert is for the specified ip or host.
+    local ipOrHost=${1:?}
+    currentCert="$CERT_DIR/$CERT_BASE_NAME.crt"
+    if [[ ! -f $currentCert ]]; then
+        return 1   # does not exist
+    fi
+    certCommonName=$(openssl x509 -noout -subject -in $currentCert | awk '{print $NF}')   # $NF gets the last word of the text
+    chk $? "getting common name of cert $currentCert"
+    if [[ $certCommonName == $ipOrHost ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+removeKeyAndCert() {
+    mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
+    rm -f $CERT_DIR/$CERT_BASE_NAME.{key,crl} 
+    chk $? "removing key and cert from $CERT_DIR"
+}
+
+createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and certificate named: $CERT_BASE_NAME.key, $CERT_BASE_NAME.crt
+    # Check if the cert is already correct from a previous run, so we don't keep changing it
+    if ! isCmdInstalled openssl; then
+        fata 2 "specified HZN_TRANSPORT=$HZN_TRANSPORT, but command openssl is not installed to create the self-signed certificate"
+    fi
+    if [[ -f "$CERT_DIR/$CERT_BASE_NAME.key" && -f "$CERT_DIR/$CERT_BASE_NAME.crt" ]]; then
+        echo "Certificate $CERT_DIR/$CERT_BASE_NAME.crt already exists, so not receating it"
+        return   # no need to recreate the cert
+    fi
+
+    # Create the private key and certificate
+    mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
+    chk $? "making directory $CERT_DIR"
+    removeKeyAndCert
+    local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:sdo-owner-services"   # add the names the containers use to contact each other
+    echo "Creating self-signed certificate for these IP addresses: $altNames"
+    # taken from https://medium.com/@groksrc/create-an-openssl-self-signed-san-cert-in-a-single-command-627fd771f25
+    openssl req -newkey rsa:4096 -nodes -sha256 -x509 -keyout $CERT_DIR/$CERT_BASE_NAME.key -days 365 -out $CERT_DIR/$CERT_BASE_NAME.crt -subj "/C=US/ST=NY/L=New York/O=allin1@openhorizon.org/CN=$(hostname)" -extensions san -config <(echo '[req]'; echo 'distinguished_name=req'; echo '[san]'; echo "subjectAltName=$altNames")
+    chk $? "creating key and certificate"
+    chmod +r $CERT_DIR/$CERT_BASE_NAME.key
+
+    # Currently the SDO mgmt hub component needs the key and cert named differently
+    cp $CERT_DIR/$CERT_BASE_NAME.key $CERT_DIR/sdoapi.key   # a sym link won't work when it is mounted into the container
+    chk $? "linking key to $CERT_DIR/sdoapi.key"
+    cp $CERT_DIR/$CERT_BASE_NAME.crt $CERT_DIR/sdoapi.crt
+    chk $? "linking crt to $CERT_DIR/sdoapi.crt"
+
+    #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME.crt /etc/ssl/certs
 }
 
 #====================== End of Functions, Start of Main ======================
@@ -503,6 +583,19 @@ else   # redhat
     export PKG_MNGR_INSTALL_QY_CMD="install -y -q"
     export PKG_MNGR_PURGE_CMD="erase -y -q"
     export PKG_MNGR_GETTEXT="gettext"
+fi
+
+# Initial checking of the input and OS
+if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
+    fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
+fi
+if [[ ! $HZN_LISTEN_IP =~ $IP_REGEX ]]; then
+    fatal 1 "HZN_LISTEN_IP must be an IP address (not a hostname)"
+fi
+ensureWeAreRoot
+
+if ! isMacOS && ! isUbuntu18 && ! isUbuntu20 && ! isRedHat8; then
+    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
 fi
 
 #====================== Start/Stop Utilities ======================
@@ -558,6 +651,10 @@ if [[ -n "$STOP" ]]; then
     fi
     ${DOCKER_COMPOSE_CMD} down $purgeFlag
 
+    if [[ -n "$PURGE" ]]; then
+        removeKeyAndCert
+    fi
+
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
         echo "Removing Open-horizon Docker images..."
         runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
@@ -604,18 +701,8 @@ fi
 
 #====================== Main Deployment Code ======================
 
-# Initial checking of the input and OS
-echo "----------- Verifying input and the host OS..."
-if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
-    fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
-fi
-ensureWeAreRoot
-
-if ! isMacOS && ! isUbuntu18 && ! isUbuntu20 && ! isRedHat8; then
-    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
-fi
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
-echo "Management hub services will listen on $HZN_LISTEN_IP"
+echo "Management hub services will listen on ${HZN_TRANSPORT}://$HZN_LISTEN_IP"
 
 # Install jq envsubst (gettext-base) docker docker-compose
 if isMacOS; then
@@ -630,7 +717,10 @@ else   # ubuntu and redhat
     echo "Updating ${PKG_MNGR} package index..."
     runCmdQuietly ${PKG_MNGR} update -q -y
     echo "Installing prerequisites, this could take a minute..."
-    runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} jq ${PKG_MNGR_GETTEXT} make
+    if [[ $HZN_TRANSPORT == 'https' ]]; then
+        optionalOpensslPkg='oepnssl'
+    fi
+    runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} jq ${PKG_MNGR_GETTEXT} make $optionalOpensslPkg
 
     # If docker isn't installed, do that
     if ! isCmdInstalled docker; then
@@ -706,25 +796,36 @@ EOFREPO
     fi
 fi
 
-# Download and process templates from open-horizon/devops
-if [[ $OH_DEVOPS_REPO == 'dontdownload' ]]; then
-    echo "Skipping download of template files..."
-else
-    echo "----------- Downloading template files..."
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
-    # leave a copy of ourself in the current dir for subsequent stop/start commands
-    if [[ ! -f 'deploy-mgmt-hub.sh' ]]; then   # do not overwrite ourself if already here
-        getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
-        chmod +x deploy-mgmt-hub.sh
+# Create self-signed certificate (if necessary)
+if [[ $HZN_TRANSPORT == 'https' ]]; then
+    if isMacOS; then
+        fatal 1 "Using HZN_TRANSPORT=https is not supported on macOS"
     fi
-    # also leave a copy of test-sdo.sh so they can run that afterward if they want to take SDO for a spin
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
-    chmod +x test-sdo.sh
+    createKeyAndCert   # won't recreate it if already correct
+
+    # agbot-tmpl.json can only have these set when using https
+    export SECURE_API_SERVER_KEY="/home/agbotuser/keys/${CERT_BASE_NAME}.key"
+    export SECURE_API_SERVER_CERT="/home/agbotuser/keys/${CERT_BASE_NAME}.crt"
+
+    export CSS_LISTENING_TYPE=secure
+else
+    removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
+    export CSS_LISTENING_TYPE=unsecure
 fi
+
+# Download and process templates from open-horizon/devops
+echo "----------- Downloading template files..."
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
+# leave a copy of ourself in the current dir for subsequent stop/start commands
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
+chmod +x deploy-mgmt-hub.sh
+# also leave a copy of test-sdo.sh so they can run that afterward if they want to take SDO for a spin
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
+chmod +x test-sdo.sh
 
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
@@ -889,6 +990,8 @@ fi
 add_autocomplete
 
 # Configure the agent/CLI
+export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
+export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
 echo "Configuring the Horizon agent and CLI..."
 if isMacOS; then
     if [[ $HZN_LISTEN_IP =~ ^(127.0.0.1|localhost|0.0.0.0)$ ]]; then
@@ -909,11 +1012,19 @@ fi
 mkdir -p /etc/default
 cat << EOF > /etc/default/horizon
 HZN_EXCHANGE_URL=http://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
-HZN_FSS_CSSURL=http://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
-HZN_AGBOT_URL=http://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
-HZN_SDO_SVC_URL=http://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
+HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
+HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
+HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 EOF
+
+if [[ $HZN_TRANSPORT == 'https' ]]; then
+    echo "HZN_MGMT_HUB_CERT_PATH=$CERT_DIR/$CERT_BASE_NAME.crt" >> /etc/default/horizon
+
+    # Now that HZN_MGMT_HUB_CERT_PATH is in /etc/default/horizon, we can use hzn mms to put the certificate in CSS
+    unset HZN_EXCHANGE_URL   # use the value in /etc/default/horizon
+    putOneFileInCss $CERT_DIR/$CERT_BASE_NAME.crt agent-install.crt
+fi
 
 unset HZN_EXCHANGE_URL   # use the value in /etc/default/horizon
 
@@ -937,21 +1048,24 @@ fi
 
 # Add agent-install.cfg to CSS so agent-install.sh can be used to install edge nodes
 if [[ $HZN_LISTEN_IP == '0.0.0.0' ]]; then
-    CFG_LISTEN_IP=$(getPublicIp)   # the agent-install.cfg in CSS is mostly for other edge nodes, so need to give them a public ip
+    CFG_LISTEN_IP=$(getPublicIp)   # the agent-install.cfg in CSS is mostly for other edge nodes, so need to try to give them a public ip
     if [[ -z $CFG_LISTEN_IP ]]; then
-        fatal 2 "can not find a public IP on this host, specify an explicit IP for HZN_LISTEN_IP, instead of $HZN_LISTEN_IP"
+        echo "Warning: can not find a public IP on this host, so the agent-install.cfg file that will be added to CSS will not be usable outside of the this host. You can explicitly specify the public IP via HZN_LISTEN_PUBLIC_IP."
+        CFG_LISTEN_IP='127.0.0.1'
     fi
 else
     CFG_LISTEN_IP=$HZN_LISTEN_IP   # even if they are listening on a private IP, they can at least test agent-install.sh locally
 fi
-export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
-export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
 cat << EOF > $TMP_DIR/agent-install.cfg
 HZN_EXCHANGE_URL=http://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
-HZN_FSS_CSSURL=http://${CFG_LISTEN_IP}:$CSS_PORT/
-HZN_AGBOT_URL=http://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
-HZN_SDO_SVC_URL=http://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
+HZN_FSS_CSSURL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$CSS_PORT/
+HZN_AGBOT_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
+HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
 EOF
+
+if [[ $HZN_TRANSPORT == 'https' ]]; then
+    echo "HZN_MGMT_HUB_CERT_PATH=$CERT_DIR/$CERT_BASE_NAME.crt" >> $TMP_DIR/agent-install.cfg
+fi
 
 putOneFileInCss $TMP_DIR/agent-install.cfg
 

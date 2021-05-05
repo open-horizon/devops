@@ -21,6 +21,8 @@ services:
       - horizonnet
     volumes:
       - ${ETC}/horizon/agbot.json:/etc/horizon/anax.json.tmpl:${VOLUME_MODE}
+      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+      - ${CERT_DIR}:/home/agbotuser/keys:${VOLUME_MODE}
       # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
       - agbotmsgkeyvol:/var/horizon/msgKey
     #environment:
