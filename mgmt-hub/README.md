@@ -102,11 +102,12 @@ Then you can run these commands:
 
 #### Adding More Edge Nodes
 
-You can install additional edge nodes and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address or hostname that is reachable by the edge nodes. If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) when you initially installed the management hub, you need to reconfigure it:
+You can install additional edge nodes and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address that is reachable by the edge nodes and be using HTTPS (unless your management hub and edge nodes are all behind a firewall). If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) and `HZN_TRANSPORT` (http) when you initially installed the management hub, you need to reconfigure it:
 
 ```
 ./deploy-mgmt-hub.sh -S   # stop the mgmt hub services (but keep the data)
-export HZN_LISTEN_IP=<ip-or-hostname>   # choose one the edge nodes can reach
+export HZN_LISTEN_IP=<external-ip>   # an IP address the edge nodes can reach
+export HZN_TRANSPORT=https
 ./deploy-mgmt-hub.sh
 ```
 
@@ -115,8 +116,8 @@ Then on each edge node:
 ```
 export HZN_ORG_ID=myorg   # or whatever you customized it to
 export HZN_EXCHANGE_USER_AUTH=admin:<admin-pw>   # use the pw deploy-mgmt-hub.sh displayed
-export HZN_FSS_CSSURL=http://<mgmt-hub-host>:9443/
-curl -sSL https://github.com/open-horizon/anax/releases/latest/download/agent-install.sh | bash -s -- -i anax: -k css: -p IBM/pattern-ibm.helloworld -w '*' -T 120
+export HZN_FSS_CSSURL=http://<mgmt-hub-ip>:9443/
+curl -sSL https://github.com/open-horizon/anax/releases/latest/download/agent-install.sh | bash -s -- -i anax: -k css: -c css: -p IBM/pattern-ibm.helloworld -w '*' -T 120
 ```
 
 When complete, you can run `hzn exchange node list` to see your new nodes.
