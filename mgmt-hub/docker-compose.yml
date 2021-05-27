@@ -147,7 +147,7 @@ services:
       - SDO_OPS_PORT=${SDO_OPS_PORT}
       - SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT}
       - SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH}
-      - AGENT_INSTALL_URL=${AGENT_INSTALL_URL}
+      - SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM}
     healthcheck:
       test: test $$(curl -sS -w %{http_code} -o /dev/null -X POST http://localhost:${SDO_RV_PORT}/mp/113/msg/20) -eq 200
       interval: 15s
