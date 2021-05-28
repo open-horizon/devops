@@ -180,7 +180,7 @@ export SDO_RV_PORT=${SDO_RV_PORT:-8040}
 export SDO_OPS_PORT=${SDO_OPS_PORT:-8042}   # the port OPS should listen on *inside* the container
 export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
 export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
-# SDO_GET_PKGS_FROM can also be set to override where the SDO container gets the horizon pkgs and agent-install.sh. It's default here is the empty string, which will cause the SDO container to get those from the latest anax github release.
+export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 
 export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
@@ -829,7 +829,9 @@ if [[ $0 == 'bash' || ! -f deploy-mgmt-hub.sh ]]; then
     getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
     chmod +x deploy-mgmt-hub.sh
 fi
-# also leave a copy of test-sdo.sh so they can run that afterward if they want to take SDO for a spin
+# also leave a copy of test-mgmt-hub.sh and test-sdo.sh so they can run those afterward, if they want
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-mgmt-hub.sh test-mgmt-hub.sh
+chmod +x test-mgmt-hub.sh
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
 chmod +x test-sdo.sh
 

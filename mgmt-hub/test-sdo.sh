@@ -43,8 +43,6 @@ while getopts ":c:vh" opt; do
 	esac
 done
 
-: ${HZN_EXCHANGE_USER_AUTH:?}   # required
-
 # Read config file, if specified. This will override any corresponding variables from the environment.
 # After this, the default values of env vars not set will be set below.
 if [[ -n $CONFIG_FILE ]]; then
@@ -57,6 +55,8 @@ if [[ -n $CONFIG_FILE ]]; then
     if [[ $? -ne 0 ]]; then echo "there are errors in $CONFIG_FILE"; exit 1; fi   # source seems to return 0 even when there is an error in the file
     set +a   # undoes the automatic exporting
 fi
+
+: ${HZN_EXCHANGE_USER_AUTH:?}   # required
 
 # These environment variables can be overridden
 export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
