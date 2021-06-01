@@ -21,7 +21,23 @@ curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/
 
 ### <a id=all-in-1-what-next></a> What To Do Next
 
-After the Horizon components have successfully deployed, here are some commands you can run:
+#### Run the Automated Tests
+
+After the Horizon components have been successfully deployed, you can verify that all components are functioning correctly by running the automated tests. Before doing that, you must set the variables for any passwords and tokens that `deploy-mgmt-hub.sh` generated (displayed in its output), and any variables that you overrode. You can set them one of two ways:
+
+1. Export the variables and then run the tests:
+
+  ```
+  ./test-mgmt-hub.sh
+  ```
+
+2. Or set the variables in a config file and pass the file to the test script:
+
+  ```
+  ./test-mgmt-hub.sh -c <config-file>
+  ```
+
+If all tests passed, you will see a green `OK` as the last line of output. Now you can manually run these commands to learn how to use Horizon:
 
 #### Horizon Agent Commands
 

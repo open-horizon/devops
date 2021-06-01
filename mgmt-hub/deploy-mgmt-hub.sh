@@ -1115,23 +1115,27 @@ fi
 echo -e "\n----------- Summary of what was done:"
 echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB"
 echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
-if [[ -n $EXCHANGE_ROOT_PW_GENERATED ]]; then
-    echo "     - Exchange root user generated password: $EXCHANGE_ROOT_PW"
-fi
-if [[ -n $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED ]]; then
-    echo "     - System org admin user generated password: $EXCHANGE_SYSTEM_ADMIN_PW"
-fi
-if [[ -n $AGBOT_TOKEN_GENERATED ]]; then
-    echo "     - Agbot generated token: $AGBOT_TOKEN"
-fi
-if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
-    echo "     - User org admin user generated password: $EXCHANGE_USER_ADMIN_PW"
-fi
-if [[ -n $HZN_DEVICE_TOKEN_GENERATED ]]; then
-    echo "     - Node generated token: $HZN_DEVICE_TOKEN"
-fi
-if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
-    echo "     Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
+    echo "    Automatically generated these passwords/tokens:"
+    if [[ -n $EXCHANGE_ROOT_PW_GENERATED ]]; then
+        echo "      EXCHANGE_ROOT_PW=$EXCHANGE_ROOT_PW"
+    fi
+    if [[ -n $EXCHANGE_HUB_ADMIN_PW_GENERATED ]]; then
+        echo "      EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
+    fi
+    if [[ -n $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED ]]; then
+        echo "      EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
+    fi
+    if [[ -n $AGBOT_TOKEN_GENERATED ]]; then
+        echo "      AGBOT_TOKEN=$AGBOT_TOKEN"
+    fi
+    if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
+        echo "      EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
+    fi
+    if [[ -n $HZN_DEVICE_TOKEN_GENERATED ]]; then
+        echo "      HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
+    fi
+    echo "    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
 fi
 if [[ -z $OH_NO_AGENT ]]; then
     echo "  3. Installed and configured the Horizon agent and CLI (hzn)"
