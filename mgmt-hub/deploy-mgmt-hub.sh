@@ -41,10 +41,10 @@ else
 fi
 
 # Set the correct default value for docker-compose command regarding to architecture
-if [[ $ARCH == "amd64" ]]; then
-    export DOCKER_COMPOSE_CMD="docker-compose"
-else    # ppc64le
+if [[ $ARCH == "ppc64le" ]]; then
     export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
+else
+    export DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
 # Parse cmd line
