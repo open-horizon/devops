@@ -149,6 +149,7 @@ export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or
 export AGBOT_ID=${AGBOT_ID:-agbot}   # its agbot id in the exchange
 export AGBOT_PORT=${AGBOT_PORT:-3110}   #todo: should we not expose this to anything but localhost?
 export AGBOT_SECURE_PORT=${AGBOT_SECURE_PORT:-3111}   # the externally accessible port
+export ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL:-3}   # passed into the agbot containers
 # Note: several alternatives were explored for deploying a 2nd agbot:
 #   - the --scale flag: gave errors about port numbers and container names coonflicting
 #   - profiles: requires compose schema version 3.9 (1Q2021), docker-compose 1.28, and docker engine 20.10.5 (could switch to this eventually)
