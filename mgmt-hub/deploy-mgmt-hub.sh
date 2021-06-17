@@ -149,6 +149,7 @@ export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or
 export AGBOT_ID=${AGBOT_ID:-agbot}   # its agbot id in the exchange
 export AGBOT_PORT=${AGBOT_PORT:-3110}   #todo: should we not expose this to anything but localhost?
 export AGBOT_SECURE_PORT=${AGBOT_SECURE_PORT:-3111}   # the externally accessible port
+export ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL:-3}   # passed into the agbot containers
 # Note: several alternatives were explored for deploying a 2nd agbot:
 #   - the --scale flag: gave errors about port numbers and container names coonflicting
 #   - profiles: requires compose schema version 3.9 (1Q2021), docker-compose 1.28, and docker engine 20.10.5 (could switch to this eventually)
@@ -1024,6 +1025,7 @@ HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
+ANAX_LOG_LEVEL=$ANAX_LOG_LEVEL
 EOF
 
 if [[ $HZN_TRANSPORT == 'https' ]]; then

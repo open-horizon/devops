@@ -25,9 +25,10 @@ services:
       - ${CERT_DIR}:/home/agbotuser/keys:${VOLUME_MODE}
       # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
       - agbotmsgkeyvol:/var/horizon/msgKey
-    #environment:
-    # HZN_VAR_BASE will default to /var/horizon, which is what we want
-    #  - HZN_VAR_BASE=/home/agbotuser
+    environment:
+      - ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL}
+      # HZN_VAR_BASE will default to /var/horizon, which is what we want
+      # - HZN_VAR_BASE=/home/agbotuser
     healthcheck:
       # Need to wait a while for this, because the deployment script does not add the org, user, agbot until after the containers are up
       test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/status) -eq 200
