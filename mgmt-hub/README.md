@@ -64,7 +64,7 @@ To view resources in the Horizon exchange, first export environment variables `H
 - View your node: `hzn exchange node list`
 - View your user in your org: `hzn exchange user list`
 - Use the verbose flag to view the exchange REST APIs the `hzn` command calls, for example: `hzn exchange user list -v`
-- View the public files in CSS that `agent-install.sh` can use to install/register the agent on edge nodes: `hzn mms -o IBM object list -d -t agent_files`
+- View the public files in CSS that `agent-install.sh` can use to install/register the agent on edge nodes: `hzn mms -o IBM -u "$HZN_ORG_ID/$HZN_EXCHANGE_USER_AUTH" object list -d -t agent_files`
 - Create an MMS file:
 
   ```bash
