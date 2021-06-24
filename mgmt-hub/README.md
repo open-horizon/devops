@@ -116,13 +116,13 @@ Then you can run these commands:
 - View the patterns the agbot is serving: `hzn exchange agbot listpattern IBM/agbot`
 - View the deployment policies the agbot is serving: `hzn exchange agbot listdeploymentpol IBM/agbot`
 
-#### Adding More Edge Nodes
+#### Adding More Edge Devices
 
-You can install additional edge nodes and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address that is reachable by the edge nodes and be using HTTPS (unless your management hub and edge nodes are all behind a firewall). If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) and `HZN_TRANSPORT` (http) when you initially installed the management hub, you need to reconfigure it:
+You can install additional edge devices and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address that is reachable by the edge devices and be using HTTPS (unless your management hub and edge devices are all behind a firewall). If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) and `HZN_TRANSPORT` (http) when you initially installed the management hub, you need to reconfigure it:
 
 ```
 ./deploy-mgmt-hub.sh -S   # stop the mgmt hub services (but keep the data)
-export HZN_LISTEN_IP=<external-ip>   # an IP address the edge nodes can reach
+export HZN_LISTEN_IP=<external-ip>   # an IP address the edge devices can reach
 export HZN_TRANSPORT=https
 ./deploy-mgmt-hub.sh
 ```
