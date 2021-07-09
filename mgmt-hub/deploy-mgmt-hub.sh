@@ -210,6 +210,16 @@ DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
 IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'   # use it like: if [[ $host =~ $IP_REGEX ]]
 export CERT_DIR=/etc/horizon/keys
 export CERT_BASE_NAME=horizonMgmtHub
+export SDO_API_CERT_BASE_NAME=$CERT_BASE_NAME
+EXCHANGE_TRUST_STORE_FILE=truststore.p12
+# colors for shell ascii output. Must use printf (and add newline) because echo -e is not supported on macos
+RED='\e[0;31m'
+GREEN='\e[0;32m'
+BLUE='\e[0;34m'
+PURPLE='\e[0;35m'
+CYAN='\e[0;36m'
+YELLOW='\e[1;33m'
+NC='\e[0m'   # no color, return to default
 
 #====================== Functions ======================
 
@@ -528,8 +538,15 @@ isCertForHost() {   # Not currently used!! Return true (0) if the current cert i
 
 removeKeyAndCert() {
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
-    rm -f $CERT_DIR/$CERT_BASE_NAME.{key,crl} 
+    rm -f $CERT_DIR/$CERT_BASE_NAME.{key,crl} $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE
     chk $? "removing key and cert from $CERT_DIR"
+}
+
+createTrustStore() {   # Combine the private key and cert into a p12 file for the exchange
+    echo "Combining the private key and cert into a p12 file for the exchange..."
+    openssl pkcs12 -export -out $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE -in $CERT_DIR/$CERT_BASE_NAME.crt -inkey $CERT_DIR/$CERT_BASE_NAME.key -aes256 -passout pass:
+    chk $? "creating $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE"
+    chmod +r $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE   # needed so the exchange container can read it when it is mounted into the container
 }
 
 createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and certificate named: $CERT_BASE_NAME.key, $CERT_BASE_NAME.crt
@@ -538,11 +555,14 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
         fata 2 "specified HZN_TRANSPORT=$HZN_TRANSPORT, but command openssl is not installed to create the self-signed certificate"
     fi
     if [[ -f "$CERT_DIR/$CERT_BASE_NAME.key" && -f "$CERT_DIR/$CERT_BASE_NAME.crt" ]]; then
+        if [[ ! -f $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE ]]; then
+            createTrustStore   # this is the case where they kept the persistent data from a previous version of this script
+        fi
         echo "Certificate $CERT_DIR/$CERT_BASE_NAME.crt already exists, so not receating it"
         return   # no need to recreate the cert
     fi
 
-    # Create the private key and certificate
+    # Create the private key and certificate that all of the mgmt hub components need
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
     chk $? "making directory $CERT_DIR"
     removeKeyAndCert
@@ -554,11 +574,7 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     chk $? "creating key and certificate"
     chmod +r $CERT_DIR/$CERT_BASE_NAME.key
 
-    # Currently the SDO mgmt hub component needs the key and cert named differently
-    cp $CERT_DIR/$CERT_BASE_NAME.key $CERT_DIR/sdoapi.key   # a sym link won't work when it is mounted into the container
-    chk $? "linking key to $CERT_DIR/sdoapi.key"
-    cp $CERT_DIR/$CERT_BASE_NAME.crt $CERT_DIR/sdoapi.crt
-    chk $? "linking crt to $CERT_DIR/sdoapi.crt"
+    createTrustStore
 
     #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME.crt /etc/ssl/certs
 }
@@ -705,6 +721,7 @@ fi
 
 #====================== Main Deployment Code ======================
 
+printf "${CYAN}------- Checking input and initializing...${NC}\n"
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
 echo "Management hub services will listen on ${HZN_TRANSPORT}://$HZN_LISTEN_IP"
 
@@ -805,20 +822,33 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
     if isMacOS; then
         fatal 1 "Using HZN_TRANSPORT=https is not supported on macOS"
     fi
-    createKeyAndCert   # won't recreate it if already correct
+    createKeyAndCert   # this won't recreate it if already correct
 
     # agbot-tmpl.json can only have these set when using https
     export SECURE_API_SERVER_KEY="/home/agbotuser/keys/${CERT_BASE_NAME}.key"
     export SECURE_API_SERVER_CERT="/home/agbotuser/keys/${CERT_BASE_NAME}.crt"
 
+    export EXCHANGE_HTTP_PORT=8081   #todo: change this back to null when https://github.com/open-horizon/anax/issues/2628 is fixed. Just for CSS.
+    export EXCHANGE_HTTPS_PORT=8080   # the internal port it listens on
+    export EXCHANGE_TRUST_STORE_PATH=\"/etc/horizon/exchange/keys/${EXCHANGE_TRUST_STORE_FILE}\"   # the exchange container's internal path
+    EXCH_CERT_ARG="--cacert $CERT_DIR/$CERT_BASE_NAME.crt"   # for use when this script is calling the exchange
+
     export CSS_LISTENING_TYPE=secure
+
+    export HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)   # for sdo ocs-api to be able to contact the exchange
 else
     removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
     export CSS_LISTENING_TYPE=unsecure
+
+    export EXCHANGE_HTTP_PORT=8080   # the internal port it listens on
+    export EXCHANGE_HTTPS_PORT=null
+    export EXCHANGE_TRUST_STORE_PATH=null
+
+    export HZN_MGMT_HUB_CERT=''   # needs to be in the environment or docker-compose will complain
 fi
 
 # Download and process templates from open-horizon/devops
-echo "----------- Downloading template files..."
+printf "${CYAN}------- Downloading template files...${NC}\n"
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
@@ -844,7 +874,7 @@ cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
 
 # Start mgmt hub services
-echo "----------- Downloading/starting Horizon management hub services..."
+printf "${CYAN}------- Downloading/starting Horizon management hub services...${NC}\n"
 echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
 pullImages
@@ -855,15 +885,15 @@ chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
-HZN_EXCHANGE_URL=http://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
+HZN_EXCHANGE_URL=${HZN_TRANSPORT}://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
 exchangeGet() {
-    curl -sS -w "%{http_code}" -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
+    curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
 exchangePost() {
-    curl -sS -w "%{http_code}" -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X POST $* 2>$CURL_ERROR_FILE
+    curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X POST $* 2>$CURL_ERROR_FILE
 }
 exchangePut() {
-    curl -sS -w "%{http_code}" -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X PUT $* 2>$CURL_ERROR_FILE
+    curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X PUT $* 2>$CURL_ERROR_FILE
 }
 
 printf "Waiting for the exchange"
@@ -887,7 +917,7 @@ fi
 
 # Create exchange resources
 # Note: in all of the checks below to see if the resource exists, we don't handle all of the error possibilities, because we'll catch them when we try to create the resource
-echo "----------- Creating the user org, the admin user in both orgs, and an agbot in the exchange..."
+printf "${CYAN}------- Creating the user org, the admin user in both orgs, and an agbot in the exchange...${NC}\n"
 
 # Create the hub admin in the root org and the admin user in system org
 echo "Creating exchange hub admin user, and the admin user and agbot in the system org..."
@@ -943,7 +973,7 @@ else
 fi
 
 # Install agent and CLI (CLI is needed for exchangePublish.sh in next step)
-echo "----------- Downloading/installing/configuring Horizon agent and CLI..."
+printf "${CYAN}------- Downloading/installing/configuring Horizon agent and CLI...${NC}\n"
 echo "Downloading the Horizon agent and CLI packages..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
@@ -1020,7 +1050,7 @@ else   # ubuntu and redhat
 fi
 mkdir -p /etc/default
 cat << EOF > /etc/default/horizon
-HZN_EXCHANGE_URL=http://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
+HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
@@ -1067,7 +1097,7 @@ else
     CFG_LISTEN_IP=$HZN_LISTEN_IP   # even if they are listening on a private IP, they can at least test agent-install.sh locally
 fi
 cat << EOF > $TMP_DIR/agent-install.cfg
-HZN_EXCHANGE_URL=http://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
+HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
@@ -1087,10 +1117,10 @@ fi
 
 if [[ -z $OH_NO_EXAMPLES ]]; then
     # Prime exchange with horizon examples
-    echo "----------- Installing Horizon example services, policies, and patterns..."
+    printf "${CYAN}------- Installing Horizon example services, policies, and patterns...${NC}\n"
     export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
     # HZN_EXCHANGE_USER_AUTH and HZN_ORG_ID are set in the section above
-    export HZN_EXCHANGE_URL=http://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
+    export HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
     rm -rf /tmp/open-horizon/examples   # exchangePublish.sh will clone the examples repo to here
     curl -sSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_USER_ORG
     chk $? 'publishing examples'
@@ -1099,7 +1129,7 @@ unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them di
 
 if [[ -z $OH_NO_AGENT ]]; then
     # Register the agent
-    echo "----------- Creating and registering the edge node with policy to run the helloworld Horizon example..."
+    printf "${CYAN}------- Creating and registering the edge node with policy to run the helloworld Horizon example...${NC}\n"
     getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
     waitForAgent
 

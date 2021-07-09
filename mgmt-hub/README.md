@@ -37,7 +37,7 @@ After the Horizon components have been successfully deployed, you can verify tha
   ./test-mgmt-hub.sh -c <config-file>
   ```
 
-If all tests passed, you will see a green `OK` as the last line of output. Now you can manually run these commands to learn how to use Horizon:
+If all tests passed, you will see a green `OK` as the last line of output. Next you can manually run the following commands to learn how to use Horizon:
 
 #### Horizon Agent Commands
 
@@ -151,7 +151,7 @@ export HZN_ORG_ID=myorg   # or whatever org name you customized it to
 export HZN_EXCHANGE_USER_AUTH=admin:<password>
 ```
 
-Run the SDO test script:
+Run the SDO test script. If you overrode any variables when running `deploy-mgmt-hub.sh`, pass those same variable values to `test-sdo.sh`, by either exporting them or putting them in a config file that you pass to `test-sdo.sh` using the `-c` flag.
 
 ```bash
 ./test-sdo.sh
