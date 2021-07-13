@@ -10,6 +10,14 @@
     },
     "root": {
       "password": "${ENVSUBST_DOLLAR_SIGN}EXCHANGE_ROOT_PW_BCRYPTED"
+    },
+    "service": {
+      "port": ${EXCHANGE_HTTP_PORT},
+      "portEncrypted": ${EXCHANGE_HTTPS_PORT}
+    },
+    "tls": {
+      "password": "",
+      "truststore": $EXCHANGE_TRUST_STORE_PATH
     }
   }
 }
