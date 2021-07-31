@@ -182,6 +182,7 @@ export SDO_OPS_PORT=${SDO_OPS_PORT:-8042}   # the port OPS should listen on *ins
 export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
 export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
 export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
+export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 
 export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
