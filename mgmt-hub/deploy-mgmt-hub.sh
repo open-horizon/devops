@@ -131,7 +131,8 @@ if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     HZN_DEVICE_TOKEN_GENERATED=1
 fi
 
-export HASHICORP_VAULT_IMAGE_TAG=${HASHICORP_VAULT_IMAGE_TAG:-latest}
+export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-hashicorp/vault}
+export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
 export VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID:-vault_dev_root_token_id}
 export VAULT_DEV_LISTEN_IP=${VAULT_DEV_LISTEN_IP:-0.0.0.0}
 export VAULT_PORT=${VAULT_PORT:-8200}
@@ -458,8 +459,8 @@ pullImages() {
     pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
     pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
     if [[ -n "$HZN_VAULT" ]]; then
-            echo "Pulling hashicorp/vault:${HASHICORP_VAULT_IMAGE_TAG}..."
-            runCmdQuietly docker pull hashicorp/vault:${HASHICORP_VAULT_IMAGE_TAG}
+            echo "Pulling ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}..."
+            pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
 }
 
@@ -566,7 +567,7 @@ createTrustStore() {   # Combine the private key and cert into a p12 file for th
 createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and certificate named: $CERT_BASE_NAME.key, $CERT_BASE_NAME.crt
     # Check if the cert is already correct from a previous run, so we don't keep changing it
     if ! isCmdInstalled openssl; then
-        fata 2 "specified HZN_TRANSPORT=$HZN_TRANSPORT, but command openssl is not installed to create the self-signed certificate"
+        fatal 2 "specified HZN_TRANSPORT=$HZN_TRANSPORT, but command openssl is not installed to create the self-signed certificate"
     fi
     if [[ -f "$CERT_DIR/$CERT_BASE_NAME.key" && -f "$CERT_DIR/$CERT_BASE_NAME.crt" ]]; then
         if [[ ! -f $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE ]]; then
@@ -703,12 +704,11 @@ if [[ -n "$START" ]]; then
   pullImages
   if [[ -n $HZN_VAULT ]]; then
     echo "Starting management hub containers with vault..."
-    ${DOCKER_COMPOSE_CMD} up -d --no-build
+    ${DOCKER_COMPOSE_CMD} --profile vault up -d --no-build
     chk $? 'starting docker-compose services (including vault)'
   else
     echo "Starting management hub containers..."
-    ${DOCKER_COMPOSE_CMD} up -d --no-build agbot && \
-    ${DOCKER_COMPOSE_CMD} up -d --no-build sdo-owner-services
+    ${DOCKER_COMPOSE_CMD} --profile main up -d --no-build
     chk $? 'starting docker-compose services'
   fi
 
@@ -727,8 +727,11 @@ fi
 if [[ -n "$UPDATE" ]]; then
     echo "Updating management hub containers..."
     pullImages
-    ${DOCKER_COMPOSE_CMD} up -d --no-build agbot && \
-    ${DOCKER_COMPOSE_CMD} up -d --no-build sdo-owner-services
+    if [[ -n $HZN_VAULT ]]; then
+      ${DOCKER_COMPOSE_CMD} --profile vault up -d --no-build
+    else
+      ${DOCKER_COMPOSE_CMD} --profile main up -d --no-build
+    fi
     chk $? 'updating docker-compose services'
     exit
 fi
@@ -902,17 +905,15 @@ printf "${CYAN}------- Downloading/starting Horizon management hub services...${
 echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
 pullImages
-
 # If the variable HZN_VAULT is set (to anything) the vault container is started.
 if [[ -n $HZN_VAULT ]]; then
   echo "Starting management hub with vault containers..."
-  ${DOCKER_COMPOSE_CMD} up -d --no-build
+  ${DOCKER_COMPOSE_CMD} --profile vault up -d --no-build
   chk $? 'starting docker-compose services (including vault)'
 else
   echo "Starting management hub containers..."
   echo "HZN_VAULT is not set, hence will skip vault..."
-  ${DOCKER_COMPOSE_CMD} up -d --no-build agbot && \
-  ${DOCKER_COMPOSE_CMD} -d --no-build sdo-owner-services
+  ${DOCKER_COMPOSE_CMD} --profile main up -d --no-build
   chk $? 'starting docker-compose services'
 fi
 

@@ -44,6 +44,9 @@ services:
       - exchange-api
       - css-api
       - postgres
+    profiles:
+      - main
+      - vault
 
   exchange-api:
     image:  ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
@@ -67,6 +70,9 @@ services:
       retries: 3
     depends_on:
       - postgres
+    profiles:
+      - main
+      - vault
 
   postgres:
     image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
@@ -85,6 +91,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    profiles:
+      - main
+      - vault
 
   css-api:
     image: ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
@@ -111,6 +120,9 @@ services:
     depends_on:
       - exchange-api
       - mongo
+    profiles:
+      - main
+      - vault
 
   mongo:
     image: ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
@@ -125,6 +137,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    profiles:
+      - main
+      - vault
 
   sdo-owner-services:
     image: ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
@@ -162,9 +177,12 @@ services:
       retries: 3
     depends_on:
       - exchange-api
+    profiles:
+      - main
+      - vault
 
   hashicorp-vault:
-    image:  hashicorp/vault:${HASHICORP_VAULT_IMAGE_TAG}
+    image:  ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     container_name: vault
     restart: always
     ports:
@@ -181,3 +199,5 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    profiles:
+      - vault
