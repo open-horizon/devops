@@ -30,8 +30,9 @@ services:
       - agbotmsgkeyvol:/var/horizon/msgKey
     environment:
       - ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL}
-      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
       - VAULT_ADDR=${VAULT_ADDR}
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
+      - HZN_VAULT=${HZN_VAULT}
       # HZN_VAR_BASE will default to /var/horizon, which is what we want
       # - HZN_VAR_BASE=/home/agbotuser
     healthcheck:
@@ -184,15 +185,18 @@ services:
   hashicorp-vault:
     image:  ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     container_name: vault
+    cap_add:
+      - IPC_LOCK
     restart: always
     ports:
-      - ${VAULT_DEV_LISTEN_IP}:${VAULT_PORT}:${VAULT_PORT}
+      - ${VAULT_DEV_LISTEN_ADDRESS}:${VAULT_PORT}
     networks:
       - horizonnet
+    volumes:
+      - ${ETC}/vault/config.json:/etc/vault/config.json:${VOLUME_MODE}
     environment:
-      - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_IP}:${VAULT_PORT}
-      - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
-      - VAULT_ADDR=http://${HZN_LISTEN_IP}:${VAULT_PORT}
+      - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS}
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
       - VAULT_LOG_LEVEL=${VAULT_LOG_LEVEL}
     healthcheck:
       test: vault status

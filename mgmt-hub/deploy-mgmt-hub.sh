@@ -131,13 +131,6 @@ if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     HZN_DEVICE_TOKEN_GENERATED=1
 fi
 
-export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-hashicorp/vault}
-export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
-export VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID:-vault_dev_root_token_id}
-export VAULT_DEV_LISTEN_IP=${VAULT_DEV_LISTEN_IP:-0.0.0.0}
-export VAULT_PORT=${VAULT_PORT:-8200}
-export VAULT_LOG_LEVEL="info"
-export VAULT_ADDR="http://vault:$VAULT_PORT"
 
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP.
 # You can also set HZN_LISTEN_PUBLIC_IP to the public IP if you want to set HZN_LISTEN_IP=0.0.0.0 but this script can't determine the public IP.
@@ -192,6 +185,11 @@ export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
 export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
 export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
+
+export VAULT_PORT=${VAULT_PORT:-8200}
+export VAULT_ADDR=http://vault:${VAULT_PORT}
+export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-openhorizon/${ARCH}_vault}
+export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
 
 export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
 export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
@@ -843,6 +841,15 @@ EOFREPO
         fi
     fi
 fi
+
+# Need to wait for root directory to be set, and jq to be installed.
+if [[ -n $HZN_VAULT ]]; then
+  export VAULT_CONFIG=${ETC}/vault/config.json
+  export VAULT_DEV_LISTEN_ADDRESS=$(shell jq ".VAULT_DEV_LISTEN_ADDRESS" $(VAULT_CONFIG))
+  export VAULT_DEV_ROOT_TOKEN_ID=$(shell jq ".VAULT_DEV_ROOT_TOKEN_ID" $(VAULT_CONFIG))
+  export VAULT_LOG_LEVEL=$(shell jq ".VAULT_LOG_LEVEL" $(VAULT_CONFIG))
+fi
+
 
 # Create self-signed certificate (if necessary)
 if [[ $HZN_TRANSPORT == 'https' ]]; then
