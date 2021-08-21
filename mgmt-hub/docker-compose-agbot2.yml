@@ -15,8 +15,8 @@ services:
     container_name: agbot2
     restart: always
     ports:
-      - 127.0.0.1:${AGBOT2_PORT}:8080
-      - ${HZN_LISTEN_IP}:${AGBOT2_SECURE_PORT}:8083
+      - 127.0.0.1:${AGBOT2_PORT}:${AGBOT_INTERNAL_PORT}
+      - ${HZN_LISTEN_IP}:${AGBOT2_SECURE_PORT}:${AGBOT_INTERNAL_SECURE_PORT}
     networks:
       - horizonnet
     volumes:
