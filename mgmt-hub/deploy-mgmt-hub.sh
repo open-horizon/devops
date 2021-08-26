@@ -17,6 +17,7 @@ Deploy the Open Horizon management hub services, agent, and CLI on this host. Cu
 Flags:
   -c <config-file>   A config file with lines in the form variable=value that set any of the environment variables supported by this script. Takes precedence over the same variables passed in through the environment.
   -A    Do not install the horizon agent package. (It will still install the horizon-cli package.) Without this flag, it will install and register the horizon agent (as well as all of the management hub services).
+  -R    Skip registering the edge node. If -A is not specified, it will install the horizon agent.
   -E    Skip loading the horizon example services, policies, and patterns.
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
   -P    Purge (delete) the persistent volumes and images of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
@@ -48,11 +49,13 @@ else
 fi
 
 # Parse cmd line
-while getopts ":c:AESPsur:vh" opt; do
+while getopts ":c:ARESPsur:vh" opt; do
 	case $opt in
 		c)  CONFIG_FILE="$OPTARG"
 		    ;;
 		A)  OH_NO_AGENT=1
+		    ;;
+		R)  OH_NO_REGISTRATION=1
 		    ;;
 		E)  OH_NO_EXAMPLES=1
 		    ;;
@@ -131,7 +134,6 @@ if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
     HZN_DEVICE_TOKEN_GENERATED=1
 fi
 
-
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP.
 # You can also set HZN_LISTEN_PUBLIC_IP to the public IP if you want to set HZN_LISTEN_IP=0.0.0.0 but this script can't determine the public IP.
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}   # Note: setting this to https is experimental, still under development!!!!!!
@@ -149,8 +151,19 @@ export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-openhorizon/${ARCH}_agbot}
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export AGBOT_ID=${AGBOT_ID:-agbot}   # its agbot id in the exchange
 export AGBOT_PORT=${AGBOT_PORT:-3110}   #todo: should we not expose this to anything but localhost?
+export AGBOT_INTERNAL_PORT=${AGBOT_INTERNAL_PORT:-8080}
 export AGBOT_SECURE_PORT=${AGBOT_SECURE_PORT:-3111}   # the externally accessible port
+export AGBOT_INTERNAL_SECURE_PORT=${AGBOT_INTERNAL_SECURE_PORT:-8083}
 export ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL:-3}   # passed into the agbot containers
+# For descriptions for these values in agbot: https://github.com/open-horizon/anax/blob/40bb7c134f7fc5d1699c921489a07b7ec220c89c/config/config.go#L80
+export AGBOT_AGREEMENT_TIMEOUT_S=${AGBOT_AGREEMENT_TIMEOUT_S:-360}
+export AGBOT_NEW_CONTRACT_INTERVAL_S=${AGBOT_NEW_CONTRACT_INTERVAL_S:-5}
+export AGBOT_PROCESS_GOVERNANCE_INTERVAL_S=${AGBOT_PROCESS_GOVERNANCE_INTERVAL_S:-5}
+export AGBOT_EXCHANGE_HEARTBEAT=${AGBOT_EXCHANGE_HEARTBEAT:-5}
+export AGBOT_CHECK_UPDATED_POLICY_S=${AGBOT_CHECK_UPDATED_POLICY_S:-7}
+export AGBOT_AGREEMENT_BATCH_SIZE=${AGBOT_AGREEMENT_BATCH_SIZE:-300}
+export AGBOT_RETRY_LOOK_BACK_WINDOW=${AGBOT_RETRY_LOOK_BACK_WINDOW:-3600}
+export AGBOT_MMS_GARBAGE_COLLECTION_INTERVAL=${AGBOT_MMS_GARBAGE_COLLECTION_INTERVAL:-20}
 # Note: several alternatives were explored for deploying a 2nd agbot:
 #   - the --scale flag: gave errors about port numbers and container names coonflicting
 #   - profiles: requires compose schema version 3.9 (1Q2021), docker-compose 1.28, and docker engine 20.10.5 (could switch to this eventually)
@@ -162,7 +175,16 @@ export AGBOT2_SECURE_PORT=${AGBOT2_SECURE_PORT:-3121}
 
 export CSS_IMAGE_NAME=${CSS_IMAGE_NAME:-openhorizon/${ARCH}_cloud-sync-service}
 export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
-export CSS_PORT=${CSS_PORT:-9443}
+export CSS_PORT=${CSS_PORT:-9443}   # the host port the css container port should be mapped to
+export CSS_INTERNAL_PORT=${CSS_INTERNAL_PORT:-8080}   # the port css is listening on inside the container (gets mapped to host port CSS_PORT)
+# For descriptions and defaults for these values in CSS: https://github.com/open-horizon/edge-sync-service/blob/master/common/config.go
+export CSS_PERSISTENCE_PATH=${CSS_PERSISTENCE_PATH:-/var/edge-sync-service/persist}
+export CSS_LOG_LEVEL=${CSS_LOG_LEVEL:-INFO}
+export CSS_LOG_TRACE_DESTINATION=${CSS_LOG_TRACE_DESTINATION:-stdout}
+export CSS_LOG_ROOT_PATH=${CSS_LOG_ROOT_PATH:-/var/edge-sync-service/log}
+export CSS_TRACE_LEVEL=${CSS_TRACE_LEVEL:-INFO}
+export CSS_TRACE_ROOT_PATH=${CSS_TRACE_ROOT_PATH:-/var/edge-sync-service/trace}
+export CSS_MONGO_AUTH_DB_NAME=${CSS_MONGO_AUTH_DB_NAME:-admin}
 
 export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
 export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -184,6 +206,8 @@ export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the ext
 export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
 export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
 export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
+export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
+export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 
 export VAULT_PORT=${VAULT_PORT:-8200}
@@ -842,6 +866,14 @@ EOFREPO
     fi
 fi
 
+# If the edge node was previously registered and we are going to register it again, then unregister before we possibly change the mgmt hub components
+if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
+    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then   # this check will properly be not true if hzn isn't installed yet
+        $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
+        chk $? 'unregistration'
+    fi
+fi
+
 # Need to wait for root directory to be set, and jq to be installed.
 if [[ -n $HZN_VAULT ]]; then
   export VAULT_CONFIG=${ETC}/vault/config.json
@@ -1168,18 +1200,13 @@ if [[ -z $OH_NO_EXAMPLES ]]; then
 fi
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
-if [[ -z $OH_NO_AGENT ]]; then
+if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     # Register the agent
     printf "${CYAN}------- Creating and registering the edge node with policy to run the helloworld Horizon example...${NC}\n"
     getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
     waitForAgent
 
-    # if they previously registered, then unregister
-    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-        $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
-        chk $? 'unregistration'
-        waitForAgent
-    fi
+    # if necessary unregister was done near the beginning of the script
     $HZN register -o $EXCHANGE_USER_ORG -u "admin:$EXCHANGE_USER_ADMIN_PW" -n "$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN" --policy node.policy.json -s ibm.helloworld --serviceorg $EXCHANGE_SYSTEM_ORG -t 180
     chk $? 'registration'
 fi
@@ -1244,7 +1271,7 @@ if [[ -z $OH_NO_EXAMPLES ]]; then
     echo "  $nextNum. Installed the Horizon examples"
     nextNum=$((nextNum+1))
 fi
-if [[ -z $OH_NO_AGENT ]]; then
+if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     echo "  $nextNum. Created and registered an edge node to run the helloworld example edge service"
     nextNum=$((nextNum+1))
     if [[ -n $HZN_VAULT ]]; then

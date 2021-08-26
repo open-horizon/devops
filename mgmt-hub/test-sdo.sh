@@ -66,6 +66,7 @@ export SDO_MFG_IMAGE_TAG=${SDO_MFG_IMAGE_TAG:-latest}
 SDO_SUPPORT_RELEASE=${SDO_SUPPORT_RELEASE:-https://github.com/open-horizon/SDO-support/releases/latest/download}
 SDO_RV_PORT=${SDO_RV_PORT:-8040}
 SDO_TO0_WAIT=${SDO_TO0_WAIT:-10}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
+OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 # Global variables for this script (not intended to be overridden)
 TMP_DIR=/tmp/horizon-all-in-1
@@ -213,7 +214,7 @@ chkHttp $? "$httpCode" 200 "getting OCS-API version" $CURL_ERROR_FILE $CURL_OUTP
 echo "OCS-API version: $(cat $CURL_OUTPUT_FILE)"
 
 echo "Imported vouchers (empty list is expected initially):"
-hzn voucher list
+hzn sdo voucher list
 chk $? "getting imported vouchers"
 
 httpCode=$(curl -sS -w "%{http_code}" -X POST -o $CURL_OUTPUT_FILE $SDO_RV_URL/mp/113/msg/20 2>$CURL_ERROR_FILE)
@@ -230,7 +231,10 @@ chk $? 'making simulate-mfg.sh executable'
 chk $? 'running simulate-mfg.sh'
 
 echo -e "\n======================== Importing the device voucher..."
-hzn voucher import /var/sdo/voucher.json --policy node.policy.json
+if [[ ! -f node.policy.json ]]; then
+    getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
+fi
+hzn sdo voucher import /var/sdo/voucher.json --policy node.policy.json
 chk $? 'importing the voucher'
 echo "Waiting for $SDO_TO0_WAIT seconds for sdo-owner-services to register the voucher with the rendezvous server..."
 sleep $SDO_TO0_WAIT
