@@ -751,8 +751,8 @@ fi
 
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
-    pullImages
     echo "Starting management hub containers..."
+    pullImages
     ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'starting docker-compose services'
 
@@ -955,6 +955,7 @@ printf "${CYAN}------- Downloading/starting Horizon management hub services...${
 echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
 pullImages
+
 echo "Starting management hub containers..."
 ${DOCKER_COMPOSE_CMD} up -d --no-build
 chk $? 'starting docker-compose services'
@@ -993,7 +994,7 @@ fi
 
 # Create exchange resources
 # Note: in all of the checks below to see if the resource exists, we don't handle all of the error possibilities, because we'll catch them when we try to create the resource
-printf "${CYAN}------- Creating the user org, and the admin user in both orgs, and an agbot in the exchange...${NC}\n"
+printf "${CYAN}------- Creating the user org, and the admin user in both orgs...${NC}\n"
 
 # Create the hub admin in the root org and the admin user in system org
 echo "Creating exchange hub admin user, and the admin user and agbot in the system org..."
