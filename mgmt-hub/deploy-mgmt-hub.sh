@@ -210,10 +210,24 @@ export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximu
 export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 
+export VAULT_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
 export VAULT_PORT=${VAULT_PORT:-8200}
-export VAULT_ADDR=http://vault:${VAULT_PORT}
+export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${VAULT_PORT}}
+export VAULT_DISABLE_TLS=
+if [[ ${HZN_TRANSPORT} == https ]]; then
+    VAULT_DISABLE_TLS=false
+else
+    VAULT_DISABLE_TLS=true
+fi
 export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-openhorizon/${ARCH}_vault}
 export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
+export HZN_VAULT_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${VAULT_PORT}
+export VAULT_LOG_LEVEL=${VAULT_LOG_LEVEL:-info}
+export VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN:-}
+export VAULT_SEAL_SECRET_SHARES=1                                                   # Number of keys that exist that are capabale of being used to unseal the vault instance. 0 < shares >= threshold
+export VAULT_SEAL_SECRET_THRESHOLD=1                                                # Number of keys needed to unseal the vault instance. threshold <= shares > 0
+export VAULT_SECRETS_ENGINE_NAME=openhorizon
+export VAULT_UNSEAL_KEY=${VAULT_UNSEAL_KEY:-}
 
 export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
 export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
@@ -236,8 +250,10 @@ TMP_DIR=/tmp/horizon-all-in-1
 mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
-VAULT_OUTPUT_FILE=$TMP_DIR/curlVaultOutput
 VAULT_ERROR_FILE=$TMP_DIR/curlVaultError
+VAULT_OUTPUT_FILE=$TMP_DIR/curlVaultOutput
+VAULT_PLUGIN_FILE=$TMP_DIR/curlVaultPlugin
+VAULT_STATUS_FILE=$TMP_DIR/curlVaultStatus
 SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
 DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
 IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'   # use it like: if [[ $host =~ $IP_REGEX ]]
@@ -335,7 +351,7 @@ isRedHat8() {
 }
 
 isUbuntu20() {
-    if [[ "$DISTRO" == 'ubuntu 20.'* ]]; then
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-1]\.* ]]; then
 		return 0
 	else
 		return 1
@@ -480,10 +496,7 @@ pullImages() {
     pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
     pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
-    if [[ -n "$HZN_VAULT" ]]; then
-            echo "Pulling ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}..."
-            pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
-    fi
+    pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
 }
 
 # Find 1 of the private IPs of the host - not currently used
@@ -629,6 +642,10 @@ else   # ubuntu and redhat
     export VOLUME_MODE=ro
 fi
 
+export VAULT_INSTANCE_DIR=${ETC}/vault/file  # Persistent volume for Vault instance
+export VAULT_KEYS_DIR=${ETC}/vault/keys
+VAULT_KEYS_FILE=$VAULT_KEYS_DIR/keys.json
+
 # Set OS-dependent package manager settings in Linux
 if isUbuntu18 || isUbuntu20; then
     export PKG_MNGR=apt-get
@@ -710,29 +727,34 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" ]]; then
         removeKeyAndCert
+        if [[ -d ${ETC}/vault ]]; then
+          # Remove Vault instance
+          rm -dfr ${ETC}/vault
+        fi
     fi
 
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
         echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
-        echo "Removing vault docker image if HZN_VAULT was defined"
-        runCmdQuietly docker rmi $(docker images hashicorp/vault -q)
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
     exit
 fi
 
+# Required directories for Vault.
+if [[ ! -d ${VAULT_INSTANCE_DIR} ]]; then
+    mkdir -p ${VAULT_INSTANCE_DIR}
+    chown -R 1001 ${VAULT_INSTANCE_DIR}
+fi
+if [[ ! -d ${VAULT_KEYS_DIR} ]]; then
+    mkdir -p ${VAULT_KEYS_DIR}
+fi
+
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
-  pullImages
-  if [[ -n $HZN_VAULT ]]; then
-    echo "Starting management hub containers with vault..."
-    ${DOCKER_COMPOSE_CMD} --profile vault up -d --no-build
-    chk $? 'starting docker-compose services (including vault)'
-  else
+    pullImages
     echo "Starting management hub containers..."
-    ${DOCKER_COMPOSE_CMD} --profile main up -d --no-build
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'starting docker-compose services'
-  fi
 
     if [[ -z $OH_NO_AGENT ]]; then
         echo "Starting the Horizon agent..."
@@ -749,11 +771,7 @@ fi
 if [[ -n "$UPDATE" ]]; then
     echo "Updating management hub containers..."
     pullImages
-    if [[ -n $HZN_VAULT ]]; then
-      ${DOCKER_COMPOSE_CMD} --profile vault up -d --no-build
-    else
-      ${DOCKER_COMPOSE_CMD} --profile main up -d --no-build
-    fi
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'updating docker-compose services'
     exit
 fi
@@ -808,8 +826,8 @@ else   # ubuntu and redhat
                 else # Ubuntu 20
                     ${PKG_MNGR} install -y docker.io containerd
                 fi
-	        else
-	            fatal 1 "hardware plarform ${ARCH} is not supported yet"
+            else
+              fatal 1 "hardware plarform ${ARCH} is not supported yet"
             fi
             chk $? 'installing docker'
         else # redhat (ppc64le)
@@ -849,19 +867,19 @@ EOFREPO
             chk $? 'making docker-compose executable'
             ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
             chk $? 'linking docker-compose to /usr/bin'
-	        export DOCKER_COMPOSE_CMD="docker-compose"
+         export DOCKER_COMPOSE_CMD="docker-compose"
         elif [[ "${ARCH}" == "ppc64le" ]]; then
             # Install docker-compose for ppc64le platform (python-based)
             ${PKG_MNGR} install -y python3 python3-pip
             chk $? 'installing python3 and pip'
             pip3 install pipenv
             chk $? 'installing pipenv'
-	        # Install specific version of docker-compose because the latest one is not working just now (possible reason see on https://status.python.org)
+           # Install specific version of docker-compose because the latest one is not working just now (possible reason see on https://status.python.org)
             pipenv install docker-compose==$minVersion
             chk $? 'installing python-based docker-compose'
-	        export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
-	else
-	    fatal 1 "hardware plarform ${ARCH} is not supported yet"
+          export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
+    else
+      fatal 1 "hardware plarform ${ARCH} is not supported yet"
         fi
     fi
 fi
@@ -873,15 +891,6 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
         chk $? 'unregistration'
     fi
 fi
-
-# Need to wait for root directory to be set, and jq to be installed.
-if [[ -n $HZN_VAULT ]]; then
-  export VAULT_CONFIG=${ETC}/vault/config.json
-  export VAULT_DEV_LISTEN_ADDRESS=$(shell jq ".VAULT_DEV_LISTEN_ADDRESS" $(VAULT_CONFIG))
-  export VAULT_DEV_ROOT_TOKEN_ID=$(shell jq ".VAULT_DEV_ROOT_TOKEN_ID" $(VAULT_CONFIG))
-  export VAULT_LOG_LEVEL=$(shell jq ".VAULT_LOG_LEVEL" $(VAULT_CONFIG))
-fi
-
 
 # Create self-signed certificate (if necessary)
 if [[ $HZN_TRANSPORT == 'https' ]]; then
@@ -920,6 +929,7 @@ getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agb
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
+getUrlFile OH_DEVOPS_REPO/mgmt-hub/vault-tmpl.json $TMP_DIR/vault-tmpl.json
 # Leave a copy of ourself in the current dir for subsequent stop/start commands.
 # If they are running us via ./deploy-mgmt-hub.sh we can't overwrite ourselves (or we get syntax errors), so only do it if we are piped into bash or for some other reason aren't executing the script from the current dir
 if [[ $0 == 'bash' || ! -f deploy-mgmt-hub.sh ]]; then
@@ -938,23 +948,16 @@ mkdir -p /etc/horizon   # putting the config files here because they are mounted
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
+export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/vault-tmpl.json | envsubst)
 
 # Start mgmt hub services
 printf "${CYAN}------- Downloading/starting Horizon management hub services...${NC}\n"
 echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
 pullImages
-# If the variable HZN_VAULT is set (to anything) the vault container is started.
-if [[ -n $HZN_VAULT ]]; then
-  echo "Starting management hub with vault containers..."
-  ${DOCKER_COMPOSE_CMD} --profile vault up -d --no-build
-  chk $? 'starting docker-compose services (including vault)'
-else
-  echo "Starting management hub containers..."
-  echo "HZN_VAULT is not set, hence will skip vault..."
-  ${DOCKER_COMPOSE_CMD} --profile main up -d --no-build
-  chk $? 'starting docker-compose services'
-fi
+echo "Starting management hub containers..."
+${DOCKER_COMPOSE_CMD} up -d --no-build
+chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
@@ -990,7 +993,7 @@ fi
 
 # Create exchange resources
 # Note: in all of the checks below to see if the resource exists, we don't handle all of the error possibilities, because we'll catch them when we try to create the resource
-printf "${CYAN}------- Creating the user org, the admin user in both orgs, and an agbot in the exchange...${NC}\n"
+printf "${CYAN}------- Creating the user org, and the admin user in both orgs, and an agbot in the exchange...${NC}\n"
 
 # Create the hub admin in the root org and the admin user in system org
 echo "Creating exchange hub admin user, and the admin user and agbot in the system org..."
@@ -1011,10 +1014,129 @@ else
     chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 
-# Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs
-if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID) == 200 ]]; then
-    restartAgbot='true'   # we may be changing its token, so need to restart it. (If there is initially no agbot resource, the agbot will just wait until it appears)
+printf "${CYAN}------- Creating a Vault instance and preforming all setup and configuration operations ...${NC}\n"
+vaultAuthMethodCheck() {
+    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME/$VAULT_AUTH_PLUGIN_EXCHANGE/tune $* 2>$VAULT_ERROR_FILE
+}
+vaultCreateSecretsEngine() {
+    echo Creating KV ver.2 secrets engine $VAULT_SECRETS_ENGINE_NAME...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$VAULT_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 204 "vaultCreateSecretsEngine" $VAULT_ERROR_FILE
+}
+vaultEnableAuthMethod() {
+    echo Enabling auth method $VAULT_AUTH_PLUGIN_EXCHANGE for secrets engine $VAULT_SECRETS_ENGINE_NAME...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$VAULT_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$VAULT_AUTH_PLUGIN_EXCHANGE\"}" $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME)
+    chkHttp $? $httpCode 204 "vaultEnableAuthMethod" $VAULT_ERROR_FILE
+}
+vaultPluginCheck() {
+    curl -sS -w "%{http_code}" -o $VAULT_PLUGIN_FILE -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE
+}
+vaultPluginHash() {
+    echo Generating SHA256 hash of $VAULT_AUTH_PLUGIN_EXCHANGE plugin...
+    hash=$($DOCKER_COMPOSE_CMD exec vault sha256sum /vault/plugins/hznvaultauth | cut -d " " -f1)
+}
+vaultRegisterPlugin() {
+    local hash=
+    echo Registering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE to Vault instance...
+    vaultPluginHash
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"hznvaultauth\"}" $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 204 "vaultRegisterPlugin" $VAULT_ERROR_FILE
+}
+vaultSecretsEngineCheck() {
+    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE
+}
+vaultServiceCheck() {
+    echo Checking Vault service status, initialization, and seal...
+    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_STATUS_FILE -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/seal-status $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 200 "vaultServiceCheck" $VAULT_ERROR_FILE
+}
+vaultUnregisterPlugin() {
+    echo Unregistering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE from Vault instance...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 204 "vaultUnregisterPlugin" $VAULT_ERROR_FILE
+}
+
+# Assumes a secret threshold size of 1
+vaultUnseal() {
+    echo Vault instance is sealed. Unsealing...
+    httpCode=$(curl -sS -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$VAULT_UNSEAL_KEY\"}" $HZN_VAULT_URL/v1/sys/unseal $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 200 "vaultUnseal" $VAULT_ERROR_FILE
+}
+vaultInitialize() {
+    echo A Vault instance has not been initialized. Initializing...
+    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $VAULT_SEAL_SECRET_SHARES,\"secret_threshold\": $VAULT_SEAL_SECRET_THRESHOLD}" $HZN_VAULT_URL/v1/sys/init $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 200 "vaultInitialize" $VAULT_ERROR_FILE
+    VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
+    VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
+    vaultUnseal
+    vaultCreateSecretsEngine
+    vaultRegisterPlugin
+    vaultEnableAuthMethod
+}
+
+vaultVaildation() {
+    echo Found a Vault instance.
+    # Regenerated root user's token
+    if [[ -z $VAULT_ROOT_TOKEN ]]; then
+        VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
+    elif [[ -n $VAULT_ROOT_TOKEN ]] && [[ $VAULT_ROOT_TOKEN != $(cat $VAULT_KEYS_FILE | jq -r '.root_token') ]]; then
+        jq -a $VAULT_ROOT_TOKEN '.root_token=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
+    fi
+
+    # Rekeyed the seal of the vault instance
+    # Will only work if seal was rekeyed to a secret threshold size of 1
+    if [[ -z $VAULT_UNSEAL_KEY ]]; then
+        VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
+    elif [[ -n $VAULT_UNSEAL_KEY ]] && [[ $VAULT_UNSEAL_KEY != $(cat $VAULT_KEYS_FILE | jq -r 'keys_base64[0]') ]]; then
+        jq -a $VAULT_UNSEAL_KEY 'keys_base64[0]=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
+    fi
+
+    if [[ $(cat $VAULT_STATUS_FILE | jq '.sealed') == true ]]; then
+        vaultUnseal
+    fi
+
+    if [[ $(vaultSecretsEngineCheck) == 404 ]]; then
+      vaultCreateSecretsEngine
+      vaultRegisterPlugin
+      vaultEnableAuthMethod
+    elif [[ $(vaultPluginCheck) == 404 ]]; then
+      vaultRegisterPlugin
+      vaultEnableAuthMethod
+    elif [[ $(vaultAuthMethodCheck) == 400 ]]; then
+      vaultEnableAuthMethod
+    else
+        # New Exchange auth plugin
+        vaultPluginHash
+        if [[ $hash != $(cat $VAULT_PLUGIN_FILE | jq -r '.data.sha256') ]]; then
+            echo Found new auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE
+            vaultUnregisterPlugin
+            vaultRegisterPlugin
+            # Not sure if the auth method needs to be cycled if the plugin has been cycled
+            #vaultEnableAuthMethod
+        fi
+    fi
+}
+
+# TODO: Implement HTTPS support
+if [[ $HZN_TRANSPORT == http ]]; then
+    vaultServiceCheck
+    if [[ $(cat $VAULT_STATUS_FILE | jq '.initialized') == false ]]; then
+        vaultInitialize
+    else
+        vaultVaildation
+    fi
+
+    # Cannot read custom configuration keys/values. Assume either its never been set, or it has changed every time.
+    echo Configuring auth method $VAULT_AUTH_PLUGIN_EXCHANGE for use with the Exchange...
+    docker-compose exec -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN
 fi
+
+
+printf "${CYAN}------- Creating an agbot in the exchange...${NC}\n"
+# Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs
+#if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID) == 200 ]]; then
+#    restartAgbot='true'   # we may be changing its token, so need to restart it. (If there is initially no agbot resource, the agbot will just wait until it appears)
+#fi
 httpCode=$(exchangePut -d "{\"token\":\"$AGBOT_TOKEN\",\"name\":\"agbot\",\"publicKey\":\"\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID)
 chkHttp $? $httpCode 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns)
@@ -1024,10 +1146,11 @@ chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID
 httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"businessPol\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols)
 chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 
-if [[ $restartAgbot == 'true' ]]; then
-    ${DOCKER_COMPOSE_CMD} restart -t 10 agbot   # docker-compose will print that it is restarting the agbot
-    chk $? 'restarting agbot service'
-fi
+
+# Vault needs the Agbot to restart everytime there is a setup or configuration change.
+# Agbot will enter non-secrets mode if Vault is not working.
+${DOCKER_COMPOSE_CMD} restart -t 10 agbot   # docker-compose will print that it is restarting the agbot
+chk $? 'restarting agbot service'
 
 # Create the user org and an admin user within it
 echo "Creating exchange user org and admin user..."
@@ -1211,32 +1334,9 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     chk $? 'registration'
 fi
 
-# If HZN_VAULT is specified, also verify the vault is responding and is authenticated
-# If passed, they automatically configure the vault ready to be used.
-VAULT_ADDR=http://$MODIFIED_LISTEN_IP:$VAULT_PORT
-echo "Starting hashicorp vault reachability tests..."
-vault_status() {
-    curl --write-out "%{http_code}" --silent -o $VAULT_OUTPUT_FILE ${VAULT_ADDR}/v1/sys/seal-status 2>$VAULT_ERROR_FILE
-}
-
-vault_authenticate() {
-    curl --write-out "%{http_code}" --silent -o $VAULT_OUTPUT_FILE -H "X-Vault-Token: $VAULT_DEV_ROOT_TOKEN_ID" -X GET ${VAULT_ADDR}/v1/auth/token/lookup-self 2>$VAULT_ERROR_FILE
-}
-
-echo "Checking vault status"
-if [[ $(vault_status) != 200 ]]; then
-    fatal 6 "Cannot reach vault at ${VAULT_ADDR}: $(cat $VAULT_ERROR_FILE 2>/dev/null)"
-fi
-
-echo "Authenticating to the vault"
-if [[ $(vault_authenticate) != 200 ]]; then
-    fatal 6 "Cannot authenticate to vault at ${VAULT_ADDR}: $(cat $VAULT_ERROR_FILE 2>/dev/null)"
-fi
-echo "Vault tests passed succesfully."
-
 # Summarize
 echo -e "\n----------- Summary of what was done:"
-echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB"
+echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB, vault"
 echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "    Automatically generated these passwords/tokens:"
@@ -1274,13 +1374,13 @@ fi
 if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     echo "  $nextNum. Created and registered an edge node to run the helloworld example edge service"
     nextNum=$((nextNum+1))
-    if [[ -n $HZN_VAULT ]]; then
-      echo "  $nextNum. Hashicorp vault started at ${VAULT_ADDR}"
-      echo "     - Vault root token id: $VAULT_DEV_ROOT_TOKEN_ID"
-      nextNum=$((nextNum+1))
-    fi
-
 fi
+echo "  $nextNum. Created a vault instance: $HZN_VAULT_URL/ui/vault/auth?with=token"
+echo "    Automatically generated this key/token:"
+echo "      VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
+echo "      VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
+echo "    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
+nextNum=$((nextNum+1))
 echo "  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
@@ -1295,8 +1395,3 @@ fi
 echo "Before running the commands in the What To Do Next section, copy/paste/run these commands in your terminal:"
 echo " export HZN_ORG_ID=$EXCHANGE_USER_ORG"
 echo " export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"
-if [[ -n $HZN_VAULT ]]; then
-    echo "To use the vault directly from the host, run the following commands"
-    echo " export VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID"
-    echo " export VAULT_ADDR=${VAULT_ADDR}"
-fi

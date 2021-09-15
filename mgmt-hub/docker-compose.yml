@@ -30,9 +30,6 @@ services:
       - agbotmsgkeyvol:/var/horizon/msgKey
     environment:
       - ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL}
-      - VAULT_ADDR=${VAULT_ADDR}
-      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
-      - HZN_VAULT=${HZN_VAULT}
       # HZN_VAR_BASE will default to /var/horizon, which is what we want
       # - HZN_VAR_BASE=/home/agbotuser
     healthcheck:
@@ -45,8 +42,6 @@ services:
       - exchange-api
       - css-api
       - postgres
-    profiles:
-      - main
       - vault
 
   exchange-api:
@@ -71,9 +66,6 @@ services:
       retries: 3
     depends_on:
       - postgres
-    profiles:
-      - main
-      - vault
 
   postgres:
     image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
@@ -92,9 +84,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-    profiles:
-      - main
-      - vault
 
   css-api:
     image: ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
@@ -121,9 +110,6 @@ services:
     depends_on:
       - exchange-api
       - mongo
-    profiles:
-      - main
-      - vault
 
   mongo:
     image: ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
@@ -138,9 +124,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-    profiles:
-      - main
-      - vault
 
   sdo-owner-services:
     image: ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
@@ -180,30 +163,28 @@ services:
       retries: 3
     depends_on:
       - exchange-api
-    profiles:
-      - main
-      - vault
 
-  hashicorp-vault:
-    image:  ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+  vault:
+    image: ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     container_name: vault
-    cap_add:
-      - IPC_LOCK
     restart: always
     ports:
       - ${VAULT_DEV_LISTEN_ADDRESS}:${VAULT_PORT}
     networks:
       - horizonnet
     volumes:
-      - ${ETC}/vault/config.json:/etc/vault/config.json:${VOLUME_MODE}
+      # Volume mount is not read only. The filesystem is the Vault instance, and Vault needs to be able to write to our host's filesystem for persistence.
+      - ${VAULT_INSTANCE_DIR}:/vault/file
     environment:
+      # This is sudo redundent and is here for the purposes of preventing production scripts from running when starting a container.
+      # The environment variable does take precedence over the configuration file (listener.tcp.address).
       - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS}
-      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
-      - VAULT_LOG_LEVEL=${VAULT_LOG_LEVEL}
+      - VAULT_LOCAL_CONFIG=$VAULT_LOCAL_CONFIG
+    command: ["server"]
     healthcheck:
-      test: vault status
+      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${VAULT_DEV_LISTEN_ADDRESS}/v1/sys/seal-status) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3
-    profiles:
-      - vault
+    depends_on:
+      - exchange-api
