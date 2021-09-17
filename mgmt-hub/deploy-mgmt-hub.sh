@@ -251,6 +251,7 @@ mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
 VAULT_ERROR_FILE=$TMP_DIR/curlVaultError
+VAULT_KEYS_FILE=$TMP_DIR/vaultkeys.json
 VAULT_OUTPUT_FILE=$TMP_DIR/curlVaultOutput
 VAULT_PLUGIN_FILE=$TMP_DIR/curlVaultPlugin
 VAULT_STATUS_FILE=$TMP_DIR/curlVaultStatus
@@ -629,6 +630,118 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME.crt /etc/ssl/certs
 }
 
+# ----- Vault functions -----
+vaultAuthMethodCheck() {
+    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME/$VAULT_AUTH_PLUGIN_EXCHANGE/tune $* 2>$VAULT_ERROR_FILE
+}
+
+vaultCreateSecretsEngine() {
+    echo Creating KV ver.2 secrets engine $VAULT_SECRETS_ENGINE_NAME...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$VAULT_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 204 "vaultCreateSecretsEngine" $VAULT_ERROR_FILE
+}
+
+vaultEnableAuthMethod() {
+    echo Enabling auth method $VAULT_AUTH_PLUGIN_EXCHANGE for secrets engine $VAULT_SECRETS_ENGINE_NAME...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$VAULT_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$VAULT_AUTH_PLUGIN_EXCHANGE\"}" $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME)
+    chkHttp $? $httpCode 204 "vaultEnableAuthMethod" $VAULT_ERROR_FILE
+}
+
+vaultPluginCheck() {
+    curl -sS -w "%{http_code}" -o $VAULT_PLUGIN_FILE -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE
+}
+
+vaultPluginHash() {
+    echo Generating SHA256 hash of $VAULT_AUTH_PLUGIN_EXCHANGE plugin...
+    hash=$($DOCKER_COMPOSE_CMD exec vault sha256sum /vault/plugins/hznvaultauth | cut -d " " -f1)
+}
+
+vaultRegisterPlugin() {
+    local hash=
+    echo Registering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE to Vault instance...
+    vaultPluginHash
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"hznvaultauth\"}" $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 204 "vaultRegisterPlugin" $VAULT_ERROR_FILE
+}
+
+vaultSecretsEngineCheck() {
+    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE
+}
+
+vaultServiceCheck() {
+    echo Checking Vault service status, initialization, and seal...
+    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_STATUS_FILE -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/seal-status $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 200 "vaultServiceCheck" $VAULT_ERROR_FILE
+}
+
+vaultUnregisterPlugin() {
+    echo Unregistering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE from Vault instance...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 204 "vaultUnregisterPlugin" $VAULT_ERROR_FILE
+}
+
+# Assumes a secret threshold size of 1
+vaultUnseal() {
+    echo Vault instance is sealed. Unsealing...
+    httpCode=$(curl -sS -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$VAULT_UNSEAL_KEY\"}" $HZN_VAULT_URL/v1/sys/unseal $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 200 "vaultUnseal" $VAULT_ERROR_FILE
+}
+
+vaultInitialize() {
+    echo A Vault instance has not been initialized. Initializing...
+    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $VAULT_SEAL_SECRET_SHARES,\"secret_threshold\": $VAULT_SEAL_SECRET_THRESHOLD}" $HZN_VAULT_URL/v1/sys/init $* 2>$VAULT_ERROR_FILE)
+    chkHttp $? $httpCode 200 "vaultInitialize" $VAULT_ERROR_FILE
+    VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
+    VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
+    vaultUnseal
+    vaultCreateSecretsEngine
+    vaultRegisterPlugin
+    vaultEnableAuthMethod
+}
+
+vaultVaildation() {
+    echo Found a Vault instance.
+    # TODO: Regenerated root user's token
+    #if [[ -z $VAULT_ROOT_TOKEN ]]; then
+    #    VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
+    #elif [[ -n $VAULT_ROOT_TOKEN ]] && [[ $VAULT_ROOT_TOKEN != $(cat $VAULT_KEYS_FILE | jq -r '.root_token') ]]; then
+    #    jq -a $VAULT_ROOT_TOKEN '.root_token=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
+    #fi
+
+    # TODO: Rekeyed the seal of the vault instance
+    # Will only work if seal was rekeyed to a secret threshold size of 1
+    #if [[ -z $VAULT_UNSEAL_KEY ]]; then
+    #    VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
+    #elif [[ -n $VAULT_UNSEAL_KEY ]] && [[ $VAULT_UNSEAL_KEY != $(cat $VAULT_KEYS_FILE | jq -r 'keys_base64[0]') ]]; then
+    #    jq -a $VAULT_UNSEAL_KEY 'keys_base64[0]=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
+    #fi
+
+    if [[ $(cat $VAULT_STATUS_FILE | jq '.sealed') == true ]]; then
+        vaultUnseal
+    fi
+
+    if [[ $(vaultSecretsEngineCheck) == 404 ]]; then
+      vaultCreateSecretsEngine
+      vaultRegisterPlugin
+      vaultEnableAuthMethod
+    elif [[ $(vaultPluginCheck) == 404 ]]; then
+      vaultRegisterPlugin
+      vaultEnableAuthMethod
+    elif [[ $(vaultAuthMethodCheck) == 400 ]]; then
+      vaultEnableAuthMethod
+    else
+        # New Exchange auth plugin
+        vaultPluginHash
+        if [[ $hash != $(cat $VAULT_PLUGIN_FILE | jq -r '.data.sha256') ]]; then
+            echo Found new auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE
+            vaultUnregisterPlugin
+            vaultRegisterPlugin
+            # TODO: Not sure if the auth method needs to be cycled if the plugin has been cycled
+            #vaultEnableAuthMethod
+        fi
+    fi
+}
+
 #====================== End of Functions, Start of Main ======================
 
 # Set distro-dependent variables
@@ -642,9 +755,10 @@ else   # ubuntu and redhat
     export VOLUME_MODE=ro
 fi
 
-export VAULT_INSTANCE_DIR=${ETC}/vault/file  # Persistent volume for Vault instance
-export VAULT_KEYS_DIR=${ETC}/vault/keys
-VAULT_KEYS_FILE=$VAULT_KEYS_DIR/keys.json
+# TODO: Future directory for TLS certificates and keys.
+#export VAULT_INSTANCE_DIR=${ETC}/vault/file
+#export VAULT_KEYS_DIR=${ETC}/vault/keys
+
 
 # Set OS-dependent package manager settings in Linux
 if isUbuntu18 || isUbuntu20; then
@@ -727,10 +841,11 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" ]]; then
         removeKeyAndCert
-        if [[ -d ${ETC}/vault ]]; then
+        # TODO: Future directories for vault
+        #if [[ -d ${ETC}/vault ]]; then
           # Remove Vault instance
-          rm -dfr ${ETC}/vault
-        fi
+          #rm -dfr ${ETC}/vault
+        #fi
     fi
 
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
@@ -740,14 +855,10 @@ if [[ -n "$STOP" ]]; then
     exit
 fi
 
-# Required directories for Vault.
-if [[ ! -d ${VAULT_INSTANCE_DIR} ]]; then
-    mkdir -p ${VAULT_INSTANCE_DIR}
-    chown -R 1001 ${VAULT_INSTANCE_DIR}
-fi
-if [[ ! -d ${VAULT_KEYS_DIR} ]]; then
-    mkdir -p ${VAULT_KEYS_DIR}
-fi
+# TODO: Future directories for Vault.
+#mkdir -p ${VAULT_INSTANCE_DIR}
+#chown -R 1001 ${VAULT_INSTANCE_DIR}
+#mkdir -p ${VAULT_KEYS_DIR}
 
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
@@ -1016,108 +1127,6 @@ else
 fi
 
 printf "${CYAN}------- Creating a Vault instance and preforming all setup and configuration operations ...${NC}\n"
-vaultAuthMethodCheck() {
-    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME/$VAULT_AUTH_PLUGIN_EXCHANGE/tune $* 2>$VAULT_ERROR_FILE
-}
-vaultCreateSecretsEngine() {
-    echo Creating KV ver.2 secrets engine $VAULT_SECRETS_ENGINE_NAME...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$VAULT_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 204 "vaultCreateSecretsEngine" $VAULT_ERROR_FILE
-}
-vaultEnableAuthMethod() {
-    echo Enabling auth method $VAULT_AUTH_PLUGIN_EXCHANGE for secrets engine $VAULT_SECRETS_ENGINE_NAME...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$VAULT_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$VAULT_AUTH_PLUGIN_EXCHANGE\"}" $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME)
-    chkHttp $? $httpCode 204 "vaultEnableAuthMethod" $VAULT_ERROR_FILE
-}
-vaultPluginCheck() {
-    curl -sS -w "%{http_code}" -o $VAULT_PLUGIN_FILE -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE
-}
-vaultPluginHash() {
-    echo Generating SHA256 hash of $VAULT_AUTH_PLUGIN_EXCHANGE plugin...
-    hash=$($DOCKER_COMPOSE_CMD exec vault sha256sum /vault/plugins/hznvaultauth | cut -d " " -f1)
-}
-vaultRegisterPlugin() {
-    local hash=
-    echo Registering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE to Vault instance...
-    vaultPluginHash
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"hznvaultauth\"}" $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 204 "vaultRegisterPlugin" $VAULT_ERROR_FILE
-}
-vaultSecretsEngineCheck() {
-    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE
-}
-vaultServiceCheck() {
-    echo Checking Vault service status, initialization, and seal...
-    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_STATUS_FILE -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/seal-status $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 200 "vaultServiceCheck" $VAULT_ERROR_FILE
-}
-vaultUnregisterPlugin() {
-    echo Unregistering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE from Vault instance...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 204 "vaultUnregisterPlugin" $VAULT_ERROR_FILE
-}
-
-# Assumes a secret threshold size of 1
-vaultUnseal() {
-    echo Vault instance is sealed. Unsealing...
-    httpCode=$(curl -sS -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$VAULT_UNSEAL_KEY\"}" $HZN_VAULT_URL/v1/sys/unseal $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 200 "vaultUnseal" $VAULT_ERROR_FILE
-}
-vaultInitialize() {
-    echo A Vault instance has not been initialized. Initializing...
-    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $VAULT_SEAL_SECRET_SHARES,\"secret_threshold\": $VAULT_SEAL_SECRET_THRESHOLD}" $HZN_VAULT_URL/v1/sys/init $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 200 "vaultInitialize" $VAULT_ERROR_FILE
-    VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
-    VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
-    vaultUnseal
-    vaultCreateSecretsEngine
-    vaultRegisterPlugin
-    vaultEnableAuthMethod
-}
-
-vaultVaildation() {
-    echo Found a Vault instance.
-    # Regenerated root user's token
-    if [[ -z $VAULT_ROOT_TOKEN ]]; then
-        VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
-    elif [[ -n $VAULT_ROOT_TOKEN ]] && [[ $VAULT_ROOT_TOKEN != $(cat $VAULT_KEYS_FILE | jq -r '.root_token') ]]; then
-        jq -a $VAULT_ROOT_TOKEN '.root_token=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
-    fi
-
-    # Rekeyed the seal of the vault instance
-    # Will only work if seal was rekeyed to a secret threshold size of 1
-    if [[ -z $VAULT_UNSEAL_KEY ]]; then
-        VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
-    elif [[ -n $VAULT_UNSEAL_KEY ]] && [[ $VAULT_UNSEAL_KEY != $(cat $VAULT_KEYS_FILE | jq -r 'keys_base64[0]') ]]; then
-        jq -a $VAULT_UNSEAL_KEY 'keys_base64[0]=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
-    fi
-
-    if [[ $(cat $VAULT_STATUS_FILE | jq '.sealed') == true ]]; then
-        vaultUnseal
-    fi
-
-    if [[ $(vaultSecretsEngineCheck) == 404 ]]; then
-      vaultCreateSecretsEngine
-      vaultRegisterPlugin
-      vaultEnableAuthMethod
-    elif [[ $(vaultPluginCheck) == 404 ]]; then
-      vaultRegisterPlugin
-      vaultEnableAuthMethod
-    elif [[ $(vaultAuthMethodCheck) == 400 ]]; then
-      vaultEnableAuthMethod
-    else
-        # New Exchange auth plugin
-        vaultPluginHash
-        if [[ $hash != $(cat $VAULT_PLUGIN_FILE | jq -r '.data.sha256') ]]; then
-            echo Found new auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE
-            vaultUnregisterPlugin
-            vaultRegisterPlugin
-            # Not sure if the auth method needs to be cycled if the plugin has been cycled
-            #vaultEnableAuthMethod
-        fi
-    fi
-}
-
 # TODO: Implement HTTPS support
 if [[ $HZN_TRANSPORT == http ]]; then
     vaultServiceCheck
@@ -1129,9 +1138,8 @@ if [[ $HZN_TRANSPORT == http ]]; then
 
     # Cannot read custom configuration keys/values. Assume either its never been set, or it has changed every time.
     echo Configuring auth method $VAULT_AUTH_PLUGIN_EXCHANGE for use with the Exchange...
-    docker-compose exec -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN
+    ${DOCKER_COMPOSE_CMD} exec -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN
 fi
-
 
 printf "${CYAN}------- Creating an agbot in the exchange...${NC}\n"
 # Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs

@@ -6,6 +6,7 @@ volumes:
   mongovol:
   agbotmsgkeyvol:
   ocsdb:
+  vaultvol:
 
 networks:
   horizonnet:
@@ -173,8 +174,7 @@ services:
     networks:
       - horizonnet
     volumes:
-      # Volume mount is not read only. The filesystem is the Vault instance, and Vault needs to be able to write to our host's filesystem for persistence.
-      - ${VAULT_INSTANCE_DIR}:/vault/file
+      - vaultvol:/vault/file
     environment:
       # This is sudo redundent and is here for the purposes of preventing production scripts from running when starting a container.
       # The environment variable does take precedence over the configuration file (listener.tcp.address).
