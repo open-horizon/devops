@@ -170,7 +170,7 @@ services:
     container_name: vault
     restart: always
     ports:
-      - ${VAULT_DEV_LISTEN_ADDRESS}:${VAULT_PORT}
+      - ${HZN_LISTEN_IP}:${VAULT_PORT}:${VAULT_PORT}
     networks:
       - horizonnet
     volumes:
