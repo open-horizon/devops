@@ -6,6 +6,7 @@ volumes:
   mongovol:
   agbotmsgkeyvol:
   ocsdb:
+  vaultvol:
 
 networks:
   horizonnet:
@@ -42,6 +43,7 @@ services:
       - exchange-api
       - css-api
       - postgres
+      - vault
 
   exchange-api:
     image:  ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
@@ -99,7 +101,7 @@ services:
       # i do not think this needed in this container
       #- mongovol:/var/edge-sync-service/persist
     environment:
-      #todo: change this back to HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exchange-api:8080/v1 when https://github.com/open-horizon/anax/issues/2628 is fixed. 
+      #todo: change this back to HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exchange-api:8080/v1 when https://github.com/open-horizon/anax/issues/2628 is fixed.
       - HZN_EXCHANGE_URL=http://exchange-api:${EXCHANGE_HTTP_PORT}/v1
     healthcheck:
       test: test $$(curl -sS -w %{http_code} -k -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null ${HZN_TRANSPORT}://localhost:8080/api/v1/health) -eq 200
@@ -162,4 +164,27 @@ services:
       retries: 3
     depends_on:
       - exchange-api
-    
+
+  vault:
+    image: ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+    container_name: vault
+    restart: always
+    ports:
+      - ${HZN_LISTEN_IP}:${VAULT_PORT}:${VAULT_PORT}
+    networks:
+      - horizonnet
+    volumes:
+      - vaultvol:/vault/file
+    environment:
+      # This is sudo redundent and is here for the purposes of preventing production scripts from running when starting a container.
+      # The environment variable does take precedence over the configuration file (listener.tcp.address).
+      - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS}
+      - VAULT_LOCAL_CONFIG=$VAULT_LOCAL_CONFIG
+    command: ["server"]
+    healthcheck:
+      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${VAULT_DEV_LISTEN_ADDRESS}/v1/sys/seal-status) -eq 200
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - exchange-api

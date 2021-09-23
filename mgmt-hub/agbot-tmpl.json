@@ -41,7 +41,10 @@
         "SecureAPIServerCert": "${SECURE_API_SERVER_CERT}",
         "AgreementBatchSize": ${AGBOT_AGREEMENT_BATCH_SIZE},
         "RetryLookBackWindow": ${AGBOT_RETRY_LOOK_BACK_WINDOW},
-        "MMSGarbageCollectionInterval": ${AGBOT_MMS_GARBAGE_COLLECTION_INTERVAL}
+        "MMSGarbageCollectionInterval": ${AGBOT_MMS_GARBAGE_COLLECTION_INTERVAL},
+        "Vault": {
+            "VaultURL": "${HZN_TRANSPORT}://vault:8200"
+        }
     },
     "ArchSynonyms": {
         "x86_64": "amd64",
