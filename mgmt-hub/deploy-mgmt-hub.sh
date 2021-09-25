@@ -589,7 +589,7 @@ isCertForHost() {   # Not currently used!! Return true (0) if the current cert i
 
 removeKeyAndCert() {
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
-    rm -f $CERT_DIR/$CERT_BASE_NAME.{key,crl} $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE
+    rm -f $CERT_DIR/$CERT_BASE_NAME.{key,crt} $CERT_DIR/$EXCHANGE_TRUST_STORE_FILE
     chk $? "removing key and cert from $CERT_DIR"
 }
 
