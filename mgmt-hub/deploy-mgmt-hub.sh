@@ -1040,7 +1040,7 @@ getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agb
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
-getUrlFile OH_DEVOPS_REPO/mgmt-hub/vault-tmpl.json $TMP_DIR/vault-tmpl.json
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/vault-tmpl.json $TMP_DIR/vault-tmpl.json
 # Leave a copy of ourself in the current dir for subsequent stop/start commands.
 # If they are running us via ./deploy-mgmt-hub.sh we can't overwrite ourselves (or we get syntax errors), so only do it if we are piped into bash or for some other reason aren't executing the script from the current dir
 if [[ $0 == 'bash' || ! -f deploy-mgmt-hub.sh ]]; then
