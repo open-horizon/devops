@@ -213,12 +213,13 @@ export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the numbe
 export VAULT_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
 export VAULT_PORT=${VAULT_PORT:-8200}
 export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${VAULT_PORT}}
-export VAULT_DISABLE_TLS=
-if [[ ${HZN_TRANSPORT} == https ]]; then
-    VAULT_DISABLE_TLS=false
-else
-    VAULT_DISABLE_TLS=true
-fi
+export VAULT_DISABLE_TLS=true
+# Todo: Future suuport for TLS/HTTPS with Vault
+#if [[ ${HZN_TRANSPORT} == https ]]; then
+#    VAULT_DISABLE_TLS=false
+#else
+#    VAULT_DISABLE_TLS=true
+#fi
 export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-openhorizon/${ARCH}_vault}
 export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
 export HZN_VAULT_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${VAULT_PORT}
