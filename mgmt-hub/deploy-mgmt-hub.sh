@@ -653,7 +653,7 @@ vaultPluginCheck() {
 
 vaultPluginHash() {
     echo Generating SHA256 hash of $VAULT_AUTH_PLUGIN_EXCHANGE plugin...
-    hash=$($DOCKER_COMPOSE_CMD exec vault sha256sum /vault/plugins/hznvaultauth | cut -d " " -f1)
+    hash=$($DOCKER_COMPOSE_CMD exec -T vault sha256sum /vault/plugins/hznvaultauth | cut -d " " -f1)
 }
 
 vaultRegisterPlugin() {
@@ -1138,7 +1138,7 @@ if [[ $HZN_TRANSPORT == http ]]; then
 
     # Cannot read custom configuration keys/values. Assume either its never been set, or it has changed every time.
     echo Configuring auth method $VAULT_AUTH_PLUGIN_EXCHANGE for use with the Exchange...
-    ${DOCKER_COMPOSE_CMD} exec -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN
+    ${DOCKER_COMPOSE_CMD} exec -T -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN
 fi
 
 printf "${CYAN}------- Creating an agbot in the exchange...${NC}\n"
