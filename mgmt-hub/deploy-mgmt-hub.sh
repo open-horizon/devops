@@ -917,7 +917,7 @@ else   # ubuntu and redhat
     runCmdQuietly ${PKG_MNGR} update -q -y
     echo "Installing prerequisites, this could take a minute..."
     if [[ $HZN_TRANSPORT == 'https' ]]; then
-        optionalOpensslPkg='oepnssl'
+        optionalOpensslPkg='openssl'
     fi
     runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} jq ${PKG_MNGR_GETTEXT} make $optionalOpensslPkg
 
