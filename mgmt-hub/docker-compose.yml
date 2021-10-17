@@ -6,6 +6,7 @@ volumes:
   mongovol:
   agbotmsgkeyvol:
   ocsdb:
+  vaultvol:
 
 networks:
   horizonnet:
@@ -18,8 +19,8 @@ services:
     container_name: agbot
     restart: always
     ports:
-      - 127.0.0.1:${AGBOT_PORT}:8080
-      - ${HZN_LISTEN_IP}:${AGBOT_SECURE_PORT}:8083
+      - 127.0.0.1:${AGBOT_PORT}:${AGBOT_INTERNAL_PORT}
+      - ${HZN_LISTEN_IP}:${AGBOT_SECURE_PORT}:${AGBOT_INTERNAL_SECURE_PORT}
     networks:
       - horizonnet
     volumes:
@@ -28,9 +29,10 @@ services:
       - ${CERT_DIR}:/home/agbotuser/keys:${VOLUME_MODE}
       # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
       - agbotmsgkeyvol:/var/horizon/msgKey
-    #environment:
-    # HZN_VAR_BASE will default to /var/horizon, which is what we want
-    #  - HZN_VAR_BASE=/home/agbotuser
+    environment:
+      - ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL}
+      # HZN_VAR_BASE will default to /var/horizon, which is what we want
+      # - HZN_VAR_BASE=/home/agbotuser
     healthcheck:
       # Need to wait a while for this, because the deployment script does not add the org, user, agbot until after the containers are up
       test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/status) -eq 200
@@ -41,6 +43,7 @@ services:
       - exchange-api
       - css-api
       - postgres
+      - vault
 
   exchange-api:
     image:  ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
@@ -55,9 +58,10 @@ services:
       - EXCHANGE_ROOT_PW_BCRYPTED=$EXCHANGE_ROOT_PW_BCRYPTED
     volumes:
       - ${ETC}/horizon/exchange.json:/etc/horizon/exchange/exchange-api.tmpl:${VOLUME_MODE}
+      - ${CERT_DIR}:/etc/horizon/exchange/keys:${VOLUME_MODE}
     # Note: compose version 3 does this health check forever, so do not do it very often. Plus it is no longer a condition for starting services dependent on it.
     healthcheck:
-      test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/v1/admin/version) -eq 200
+      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://localhost:8080/v1/admin/version) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3
@@ -94,10 +98,11 @@ services:
       - ${ETC}/horizon/css.conf:/etc/edge-sync-service/sync.conf.tmpl:${VOLUME_MODE}
       # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
       - ${CERT_DIR}:/home/cssuser/keys:${VOLUME_MODE}
-      #todo: i do not think this needed in this container?
+      # i do not think this needed in this container
       #- mongovol:/var/edge-sync-service/persist
     environment:
-      - HZN_EXCHANGE_URL=http://exchange-api:8080/v1
+      #todo: change this back to HZN_EXCHANGE_URL=${HZN_TRANSPORT}://exchange-api:8080/v1 when https://github.com/open-horizon/anax/issues/2628 is fixed.
+      - HZN_EXCHANGE_URL=http://exchange-api:${EXCHANGE_HTTP_PORT}/v1
     healthcheck:
       test: test $$(curl -sS -w %{http_code} -k -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null ${HZN_TRANSPORT}://localhost:8080/api/v1/health) -eq 200
       interval: 15s
@@ -137,8 +142,10 @@ services:
       - ${CERT_DIR}:/home/sdouser/ocs-api-dir/keys:${VOLUME_MODE}
     # intentionally omitting HZN_MGMT_HUB_CERT from the environment section, since we use http in this environment
     environment:
-      - HZN_EXCHANGE_URL=http://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
-      - EXCHANGE_INTERNAL_URL=http://exchange-api:8080/v1
+      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
+      - EXCHANGE_INTERNAL_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
+      - EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES}
+      - EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL}
       - HZN_FSS_CSSURL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${CSS_PORT}/
       - HZN_ORG_ID=${EXCHANGE_USER_ORG}
       - SDO_OWNER_SVC_HOST=${HZN_LISTEN_IP}
@@ -148,6 +155,8 @@ services:
       - SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT}
       - SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH}
       - SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM}
+      - SDO_API_CERT_BASE_NAME=${SDO_API_CERT_BASE_NAME}
+      - HZN_MGMT_HUB_CERT=${HZN_MGMT_HUB_CERT}
     healthcheck:
       test: test $$(curl -sS -w %{http_code} -o /dev/null -X POST http://localhost:${SDO_RV_PORT}/mp/113/msg/20) -eq 200
       interval: 15s
@@ -155,4 +164,27 @@ services:
       retries: 3
     depends_on:
       - exchange-api
-    
+
+  vault:
+    image: ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+    container_name: vault
+    restart: always
+    ports:
+      - ${HZN_LISTEN_IP}:${VAULT_PORT}:${VAULT_PORT}
+    networks:
+      - horizonnet
+    volumes:
+      - vaultvol:/vault/file
+    environment:
+      # This is sudo redundent and is here for the purposes of preventing production scripts from running when starting a container.
+      # The environment variable does take precedence over the configuration file (listener.tcp.address).
+      - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS}
+      - VAULT_LOCAL_CONFIG=$VAULT_LOCAL_CONFIG
+    command: ["server"]
+    healthcheck:
+      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${VAULT_DEV_LISTEN_ADDRESS}/v1/sys/seal-status) -eq 200
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - exchange-api

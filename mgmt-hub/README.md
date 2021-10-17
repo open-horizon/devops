@@ -37,7 +37,7 @@ After the Horizon components have been successfully deployed, you can verify tha
   ./test-mgmt-hub.sh -c <config-file>
   ```
 
-If all tests passed, you will see a green `OK` as the last line of output. Now you can manually run these commands to learn how to use Horizon:
+If all tests passed, you will see a green `OK` as the last line of output. Next you can manually run the following commands to learn how to use Horizon:
 
 #### Horizon Agent Commands
 
@@ -64,7 +64,7 @@ To view resources in the Horizon exchange, first export environment variables `H
 - View your node: `hzn exchange node list`
 - View your user in your org: `hzn exchange user list`
 - Use the verbose flag to view the exchange REST APIs the `hzn` command calls, for example: `hzn exchange user list -v`
-- View the public files in CSS that `agent-install.sh` can use to install/register the agent on edge nodes: `hzn mms -o IBM object list -d -t agent_files`
+- View the public files in CSS that `agent-install.sh` can use to install/register the agent on edge nodes: `hzn mms -o IBM -u "$HZN_ORG_ID/$HZN_EXCHANGE_USER_AUTH" object list -d -t agent_files`
 - Create an MMS file:
 
   ```bash
@@ -116,13 +116,13 @@ Then you can run these commands:
 - View the patterns the agbot is serving: `hzn exchange agbot listpattern IBM/agbot`
 - View the deployment policies the agbot is serving: `hzn exchange agbot listdeploymentpol IBM/agbot`
 
-#### Adding More Edge Nodes
+#### Adding More Edge Devices
 
-You can install additional edge nodes and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address that is reachable by the edge nodes and be using HTTPS (unless your management hub and edge nodes are all behind a firewall). If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) and `HZN_TRANSPORT` (http) when you initially installed the management hub, you need to reconfigure it:
+You can install additional edge devices and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address that is reachable by the edge devices and be using HTTPS (unless your management hub and edge devices are all behind a firewall). If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) and `HZN_TRANSPORT` (http) when you initially installed the management hub, you need to reconfigure it:
 
 ```
 ./deploy-mgmt-hub.sh -S   # stop the mgmt hub services (but keep the data)
-export HZN_LISTEN_IP=<external-ip>   # an IP address the edge nodes can reach
+export HZN_LISTEN_IP=<external-ip>   # an IP address the edge devices can reach
 export HZN_TRANSPORT=https
 ./deploy-mgmt-hub.sh
 ```
@@ -151,7 +151,7 @@ export HZN_ORG_ID=myorg   # or whatever org name you customized it to
 export HZN_EXCHANGE_USER_AUTH=admin:<password>
 ```
 
-Run the SDO test script:
+Run the SDO test script. If you overrode any variables when running `deploy-mgmt-hub.sh`, pass those same variable values to `test-sdo.sh`, by either exporting them or putting them in a config file that you pass to `test-sdo.sh` using the `-c` flag.
 
 ```bash
 ./test-sdo.sh
