@@ -653,7 +653,8 @@ vaultPluginCheck() {
 
 vaultPluginHash() {
     echo Generating SHA256 hash of $VAULT_AUTH_PLUGIN_EXCHANGE plugin...
-    hash=$($DOCKER_COMPOSE_CMD exec -T vault sha256sum /vault/plugins/hznvaultauth | cut -d " " -f1)
+    # Note: must redirect stdin to /dev/null, otherwise when this script is being piped into bash the following cmd will gobble the rest of this script and execution will end abruptly
+    hash=$($DOCKER_COMPOSE_CMD exec -T vault sha256sum /vault/plugins/hznvaultauth </dev/null | cut -d " " -f1)
 }
 
 vaultRegisterPlugin() {
@@ -742,7 +743,7 @@ vaultVaildation() {
     fi
 }
 
-#====================== End of Functions, Start of Main ======================
+#====================== End of Functions, Start of Main Initialization ======================
 
 # Set distro-dependent variables
 if isMacOS; then
@@ -785,119 +786,6 @@ ensureWeAreRoot
 if ! isMacOS && ! isUbuntu18 && ! isUbuntu20 && ! isRedHat8; then
     fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
 fi
-
-#====================== Start/Stop Utilities ======================
-# Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
-
-# Check for invalid flag combinations
-if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 1 ]]; then
-    fatal 1 "only 1 of these flags can be specified: -s, -S, -u"
-fi
-if [[ -n "$PURGE" && -z "$STOP" ]]; then
-    fatal 1 "-p can only be used with -S"
-fi
-
-# Bring down the agent and the mgmt hub services
-if [[ -n "$STOP" ]]; then
-    # Unregister if necessary
-    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
-        $HZN unregister -f
-        chk $? 'unregistration'
-    fi
-
-    if isMacOS; then
-        if [[ -z $OH_NO_AGENT ]]; then
-            /usr/local/bin/horizon-container stop
-        fi
-        if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon CLI..."
-            /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
-            if [[ -z $OH_NO_AGENT ]]; then
-                echo "Removing the Horizon agent image..."
-                runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
-            fi
-        fi
-    elif [[ -z $OH_NO_AGENT  ]]; then   # ubuntu and redhat
-        echo "Stopping the Horizon agent..."
-        systemctl stop horizon
-        if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon agent and CLI..."
-            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli
-        fi
-    else   # ubuntu and redhat, but only cli
-        if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon CLI..."
-            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon-cli
-        fi
-    fi
-
-    if [[ -n "$PURGE" ]]; then
-        echo "Stopping Horizon management hub services and deleting their persistent volumes..."
-        purgeFlag='--volumes'
-    else
-        echo "Stopping Horizon management hub services..."
-    fi
-    ${DOCKER_COMPOSE_CMD} down $purgeFlag
-
-    if [[ -n "$PURGE" ]]; then
-        removeKeyAndCert
-        # TODO: Future directories for vault
-        #if [[ -d ${ETC}/vault ]]; then
-          # Remove Vault instance
-          #rm -dfr ${ETC}/vault
-        #fi
-    fi
-
-    if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
-        echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
-    fi
-    exit
-fi
-
-# TODO: Future directories for Vault.
-#mkdir -p ${VAULT_INSTANCE_DIR}
-#chown -R 1001 ${VAULT_INSTANCE_DIR}
-#mkdir -p ${VAULT_KEYS_DIR}
-
-# Start the mgmt hub services and agent (use existing configuration)
-if [[ -n "$START" ]]; then
-    echo "Starting management hub containers..."
-    pullImages
-    ${DOCKER_COMPOSE_CMD} up -d --no-build
-    chk $? 'starting docker-compose services'
-
-    if [[ -z $OH_NO_AGENT ]]; then
-        echo "Starting the Horizon agent..."
-        if isMacOS; then
-            /usr/local/bin/horizon-container start
-        else   # ubuntu and redhat
-            systemctl start horizon
-        fi
-    fi
-    exit
-fi
-
-# Run 'docker-compose up ...' again so any mgmt hub containers will be updated
-if [[ -n "$UPDATE" ]]; then
-    echo "Updating management hub containers..."
-    pullImages
-    ${DOCKER_COMPOSE_CMD} up -d --no-build
-    chk $? 'updating docker-compose services'
-    exit
-fi
-
-# Restart 1 mgmt hub container
-if [[ -n "$RESTART" ]]; then
-    if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 0 ]]; then
-        fatal 1 "-s or -S or -u cannot be specified with -r"
-    fi
-    echo "Restarting the $RESTART container..."
-    ${DOCKER_COMPOSE_CMD} restart -t 10 "$RESTART"   #todo: do not know if this will work if there are 2 agbots replicas running
-    exit
-fi
-
-#====================== Main Deployment Code ======================
 
 printf "${CYAN}------- Checking input and initializing...${NC}\n"
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
@@ -995,14 +883,6 @@ EOFREPO
     fi
 fi
 
-# If the edge node was previously registered and we are going to register it again, then unregister before we possibly change the mgmt hub components
-if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
-    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then   # this check will properly be not true if hzn isn't installed yet
-        $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
-        chk $? 'unregistration'
-    fi
-fi
-
 # Create self-signed certificate (if necessary)
 if [[ $HZN_TRANSPORT == 'https' ]]; then
     if isMacOS; then
@@ -1060,6 +940,128 @@ cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
 export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/vault-tmpl.json | envsubst)
+
+#====================== Start/Stop/Restart/Update ======================
+# Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
+
+# Check for invalid flag combinations
+if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 1 ]]; then
+    fatal 1 "only 1 of these flags can be specified: -s, -S, -u"
+fi
+if [[ -n "$PURGE" && -z "$STOP" ]]; then
+    fatal 1 "-p can only be used with -S"
+fi
+
+# Bring down the agent and the mgmt hub services
+if [[ -n "$STOP" ]]; then
+    printf "${CYAN}------- Stopping Horizon services...${NC}\n"
+    # Unregister if necessary
+    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
+        $HZN unregister -f
+        chk $? 'unregistration'
+    fi
+
+    if isMacOS; then
+        if [[ -z $OH_NO_AGENT ]]; then
+            /usr/local/bin/horizon-container stop
+        fi
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon CLI..."
+            /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
+            if [[ -z $OH_NO_AGENT ]]; then
+                echo "Removing the Horizon agent image..."
+                runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
+            fi
+        fi
+    elif [[ -z $OH_NO_AGENT  ]]; then   # ubuntu and redhat
+        echo "Stopping the Horizon agent..."
+        systemctl stop horizon
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon agent and CLI..."
+            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli
+        fi
+    else   # ubuntu and redhat, but only cli
+        if [[ -n "$PURGE" ]]; then
+            echo "Uninstalling the Horizon CLI..."
+            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon-cli
+        fi
+    fi
+
+    if [[ -n "$PURGE" ]]; then
+        echo "Stopping Horizon management hub services and deleting their persistent volumes..."
+        purgeFlag='--volumes'
+    else
+        echo "Stopping Horizon management hub services..."
+    fi
+    ${DOCKER_COMPOSE_CMD} down $purgeFlag
+
+    if [[ -n "$PURGE" ]]; then
+        removeKeyAndCert
+        # TODO: Future directories for vault
+        #if [[ -d ${ETC}/vault ]]; then
+          # Remove Vault instance
+          #rm -dfr ${ETC}/vault
+        #fi
+    fi
+
+    if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
+        echo "Removing Open-horizon Docker images..."
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+    fi
+    exit
+fi
+
+# TODO: Future directories for Vault.
+#mkdir -p ${VAULT_INSTANCE_DIR}
+#chown -R 1001 ${VAULT_INSTANCE_DIR}
+#mkdir -p ${VAULT_KEYS_DIR}
+
+# Start the mgmt hub services and agent (use existing configuration)
+if [[ -n "$START" ]]; then
+    printf "${CYAN}------- Starting Horizon services...${NC}\n"
+    pullImages
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
+    chk $? 'starting docker-compose services'
+
+    if [[ -z $OH_NO_AGENT ]]; then
+        echo "Starting the Horizon agent..."
+        if isMacOS; then
+            /usr/local/bin/horizon-container start
+        else   # ubuntu and redhat
+            systemctl start horizon
+        fi
+    fi
+    exit
+fi
+
+# Run 'docker-compose up ...' again so any mgmt hub containers will be updated
+if [[ -n "$UPDATE" ]]; then
+    printf "${CYAN}------- Updating management hub containers...${NC}\n"
+    pullImages
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
+    chk $? 'updating docker-compose services'
+    exit
+fi
+
+# Restart 1 mgmt hub container
+if [[ -n "$RESTART" ]]; then
+    if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 0 ]]; then
+        fatal 1 "-s or -S or -u cannot be specified with -r"
+    fi
+    printf "${CYAN}------- Restarting the $RESTART container...${NC}\n"
+    ${DOCKER_COMPOSE_CMD} restart -t 10 "$RESTART"   #todo: do not know if this will work if there are 2 agbots replicas running
+    exit
+fi
+
+#====================== Deploy All Of The Services ======================
+
+# If the edge node was previously registered and we are going to register it again, then unregister before we possibly change the mgmt hub components
+if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
+    if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then   # this check will properly be not true if hzn isn't installed yet
+        $HZN unregister -f $UNREGISTER_FLAGS   # this flag variable is left here because rerunning this script was resulting in the unregister failing partway thru, but now i can't reproduce it
+        chk $? 'unregistration'
+    fi
+fi
 
 # Start mgmt hub services
 printf "${CYAN}------- Downloading/starting Horizon management hub services...${NC}\n"
@@ -1126,7 +1128,7 @@ else
     chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 
-printf "${CYAN}------- Creating a Vault instance and preforming all setup and configuration operations ...${NC}\n"
+printf "${CYAN}------- Creating a Vault instance and performing all setup and configuration operations ...${NC}\n"
 # TODO: Implement HTTPS support
 if [[ $HZN_TRANSPORT == http ]]; then
     vaultServiceCheck
@@ -1138,7 +1140,8 @@ if [[ $HZN_TRANSPORT == http ]]; then
 
     # Cannot read custom configuration keys/values. Assume either its never been set, or it has changed every time.
     echo Configuring auth method $VAULT_AUTH_PLUGIN_EXCHANGE for use with the Exchange...
-    ${DOCKER_COMPOSE_CMD} exec -T -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN
+    # Note: must redirect stdin to /dev/null, otherwise when this script is being piped into bash the following cmd will gobble the rest of this script and execution will end abruptly
+    ${DOCKER_COMPOSE_CMD} exec -T -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN </dev/null
 fi
 
 printf "${CYAN}------- Creating an agbot in the exchange...${NC}\n"
