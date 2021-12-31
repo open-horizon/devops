@@ -1,6 +1,6 @@
 # Horizon Management Hub
 
-## <a id=deploy-all-in-1></a> Deploy All-in-1 Horizon Management Hub, Agent, and CLI
+## <a id=deploy-all-in-one></a> Deploy All-in-One Horizon Management Hub, Agent, and CLI
 
 This enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
 
@@ -11,7 +11,8 @@ Read the notes, and then run the following command to deploy the Horizon compone
 - Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, and macOS**
 - This script is not yet compatible with docker installed via Snap. If docker has already been installed via Snap, remove the existing docker snap and allow the script to reinstall the latest version of docker.
 - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. Making some of the recommended changes to my docker version and settings enabled me to get past the problem, but I'm not sure if others will hit it or not.
-- The script can be run as shown without any arguments and will use reasonable defaults for everything. If you prefer, there are many environment variables that can be set to customize the deployment. See the beginning of [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh) (just passed the usage and command line parsing) for all of the environment variables that can be overridden. All of the `*_PW` and `*_TOKEN` environment variables can be overridden, and any variable in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
+- The deployment can be customized by overriding environment variables in [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
+All `*_PW` and `*_TOKEN` environment variables and variables in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
 
 As **root** run:
 
@@ -19,7 +20,15 @@ As **root** run:
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
 ```
 
-### <a id=all-in-1-what-next></a> What To Do Next
+### <a id=setup-vm-requirements></a> System Requirements
+
+The All-in-One environment is intended for use on devices or virtual machines with **at least 4GB RAM and 20GB of storage space**.
+
+Ubuntu Server 18.04 and 20.04 are the preferred operating systems for evaluating and learning Open Horizon for now. You can download Ubuntu Server from [Ubuntu Releases](https://releases.ubuntu.com/).
+
+If you wish to use the All-in-One environment in a virtual machine, please read the <a href=#setup-vm>VM setup notes</a> further down for details.
+
+### <a id=all-in-one-what-next></a> What To Do Next
 
 #### Run the Automated Tests
 
@@ -140,9 +149,9 @@ When complete, you can run `hzn exchange node list` to see your new nodes.
 
 ### <a id=try-sdo></a> Try Out SDO
 
-[Intel's SDO](https://software.intel.com/en-us/secure-device-onboard) (Secure Device Onboard) technology can configure an edge device and register it with a Horizon instance automatically. Although this is not really necessary in this all-in-1 environment (because the agent has already been registered), you can easily try out SDO to see it working.
+[Intel's SDO](https://software.intel.com/en-us/secure-device-onboard) (Secure Device Onboard) technology can configure an edge device and register it with a Horizon instance automatically. Although this is not really necessary in this all-in-one environment (because the agent has already been registered), you can easily try out SDO to see it working.
 
-**Note:** SDO is currently only supported in this all-in-1 environment on Ubuntu.
+**Note:** SDO is currently only supported in this all-in-one environment on Ubuntu.
 
 Export these environment variables:
 
@@ -165,7 +174,7 @@ You will see the script do these steps:
 - Import the voucher of this device into the SDO management hub component
 - Simulate the booting of this device, which will verify the agent has already been installed, and then register it for the helloworld edge service example
 
-### <a id=all-in-1-pause></a> "Pausing" The Services
+### <a id=all-in-one-pause></a> "Pausing" The Services
 
 The Horizon management hub services and edge agent use some CPU even in steady state. If you don't need them for a period of time, you can stop the containers by running:
 
@@ -178,3 +187,150 @@ When you want to use the Horizon management hub services and edge agent again, y
 ```bash
 ./deploy-mgmt-hub.sh -s
 ```
+
+## <a id=setup-vm></a> Setting up a VM for the All-in-One Environment
+
+Using a Virtual Machine (VM) allows you to learn and experiment with Open Horizon in a safe, controlled environment without affecting your host system. This requires the use of virtualization software that is easily obtainable or even integrated into your host's operating system.
+
+<a href=#setup-vm-vbox>VirtualBox</a> and <a href=#setup-vm-qemu-kvm-boxes>QEMU</a> are two popular open-source choices.
+
+#### <a id=setup-vm-vbox></a> VirtualBox
+
+Oracle VM [VirtualBox](https://www.virtualbox.org/wiki/Downloads) is a virtualization application that runs on macOS, Solaris and Windows as well as Linux.
+Its Virtual Machine Manager user interface has a reasonable learning curve for beginners while keeping advanced settings within easy reach.
+
+The Open Horizon website has [a video](https://open-horizon.github.io/common-requests/install.html) detailing the process of setting up a VM in VirtualBox for use with the All-in-One environment.
+
+This is a summary of the setup process:
+
+To create a VM, click on the New button in the VirtualBox Manager's toolbar, then use the settings below as prompted.
+
+Option | Choice
+-------|-------
+Name and operating system | Set `Name` to personal preference[^vbox-vmname]
+Memory size | 4096 MB
+Hard disk | `Create a virtual hard disk now`
+Hard disk file type | `VDI`
+Storage on physical hard disk | `Fixed size`[^vbox-fixedsize]
+File location and size | Set Size to 20GB, leave the location unchanged unless advised otherwise.
+
+After the creating the VM, select it on the left hand pane in the VirtualBox Manager, then click on Settings in the toolbar to open up the VM's settings. Make the following changes:
+
+Setting | Choice
+--------|-------
+General > Advanced | Set `Shared Clipboard` to `Host to Guest`[^vbox-clipboard]
+System > Motherboard | Unselect `Floppy`[^vbox-nofloppy]
+Network > Adapter 1 | Set `Attached to` to `Bridged Adapter` to share network with host
+
+[^vbox-vmname]: VirtualBox will attempt to set the correct `Type` based on keywords used in the VM's Name. Include the word 'Ubuntu' in the name and VirtualBox will set the `Type` to `Ubuntu`.
+
+[^vbox-fixedsize]: Either setting works, `Fixed Size` has better performance.
+
+[^vbox-clipboard]: Optional. Shared Clipboard allows you to copy and paste commands into the VM through the VM's monitor (this can also be done via SSH).
+
+[^vbox-nofloppy]: It is also good idea to disable unused devices.
+
+#### <a id=setup-vm-qemu-kvm-boxes></a> QEMU with GNOME Boxes
+
+The QEMU virtualization software is preinstalled on most major GNU/Linux distributions.
+There are several ways to use QEMU, from third-party VM managers to the command line, but GNOME Boxes is one of the simplest.
+
+Please note that GNOME Boxes is generally only available on GNU/Linux distributions running the GNOME desktop environment. Fedora, Ubuntu, CentOS and RHEL are some distributions that use GNOME by default.
+
+To create a VM in Boxes:
+
+1. Click on the + button on the upper left to start the VM creation process.
+2. When the `Create a Virtual Machine` page appears, scroll down and select `Operating System Image File`. In the file browser that appears, navigate to a directory containing an Ubuntu image file and select the image file.
+   - Alternatively, Boxes can download the image files for you. Select `Operating System Download`, and on the next page, type 'Ubuntu'. The image file list should show only Ubuntu image files in clear view.
+   - Image files downloaded by Boxes are saved to the `Downloads` folder in your `home` directory (i.e. `~/Downloads`).
+3. On the `Review and Create` page click `Customize` to reveal options for your VM.
+   - Set `Memory` to 4GB and `Maximum Disk Size` to 20GB.
+4. Click Create on the upper right corner of the page. The new VM will start automatically after it is created.
+5. For subsequent runs, click on the VM you just created in on the main screen to run it.
+   - To rename the VM you just created, right-click it in the main screen and select `Properties`. In the dialog box that appears, type a new name into the `Name` field.   
+   - Advanced users can fine-tune the VM by editing its XML configuration file. To access this, go to the `System` tab and click on `Edit XML`.
+
+All new VMs are configured with bridged networking and thus share the same network as the host.
+
+### <a id=install-os></a> Installing Ubuntu for the All-in-One Environment
+
+Ubuntu image files (or ISOs) may be configured to use one of these installers:
+
+* <a href=#install-os-subiquity>Subiquity</a> (identified by a black background and an orange top)
+
+* <a href=#install-os-debstyle>Debian-style</a> (with a purple background and grey dialog boxes)
+
+#### <a id=install-os-subiquity></a> Subiquity Installer
+
+Choose the following options when prompted, when installing with Subiquity:
+
+Option | Choice
+-----------------|--------------------
+Language[^ubuntu-lang] | `English` or `English (UK)`
+Installer Update | `Update to the new installer`
+Keyboard configuration\* | Whatever most appropriate for your system
+Network connections | Use defaults. Change as advised if using a custom network configuration.
+Configure proxy | Leave blank if your internet connection does not use a proxy. Otherwise, change the `proxy address` as advised.
+Ubuntu archive mirror | Use defaults unless advised otherwise
+Guided storage configuration | Use defaults
+Storage configuration | Use defaults. Confirm the 'destructive action'.
+Profile setup | Use your personal preferences
+SSH setup | Enable `Install OpenSSH` server, do not `Import SSH Identities`.
+Featured Server Snaps | Do not select any Snaps
+
+Please wait until the entire installation process is complete, including updates.
+Only skip updates if the update stalls for an unreasonably long time. Remember to update the system afterwards if you choose to skip updates.
+
+If prompted, press Enter to reboot.
+
+#### <a id=install-os-debstyle></a> Debian-style Installer
+
+Choose the following options when prompted, when using the Debian-style installer:
+
+Option | Choice
+-----------------|--------------------
+Select a Language | `English`[^ubuntu-lang]
+Select your location | Choose the country you are currently in, or `other` if it is not on the list[^ubuntu-location]
+Configure the keyboard (multiple dialogs) | Whatever most appropriate for your system
+Configure the network (Hostname) | Use your personal preference, or as advised
+Set up users and passwords (multiple dialogs) | Use your personal preferences
+Configure the clock | Whatever most appropriate for your location
+Partition disks | `Guided - use entire disk`, or as advised
+Partition disks (select disks to partition) | Choose the only option, or as advised
+Partition disks (write the changes to disks) | `Yes`
+Configure the package manager (HTTP proxy) | Leave blank if your internet connection does not use a proxy. Otherwise, change the `proxy address` as advised.
+Configuring tasksel (automatic updates) | `No automatic updates`, or as advised
+Software selection | Select `OpenSSH server` only
+Install the GRUB boot loader... | `Yes`
+
+On the last `Installation complete` dialog box, select `Continue`.
+
+[^ubuntu-lang]: Other languages have not been tested, but no compatibility issues are expected
+
+[^ubuntu-location]: The location list changes according to the language you have selected
+
+#### <a id=install-os-first-run></a> Ubuntu Server Notes
+
+The first boot after installation may be slow.  A VM may appear to be unresponsive and present a blank screen for up to a few minutes. A login prompt should soon appear.
+
+Log events may be printed over the login prompt and appear to interfere with username and password entry. If this happens, disregard the events and enter your username and password as normal.
+
+Run this command to start a manual update:
+
+```bash
+sudo apt-get -y update
+```
+
+Once you have set up your VM, you are ready to deploy the all-in-one environment. Instructions are at <a href="#deploy-all-in-one">the top of this file</a>.
+
+#### <a id=vm-ssh></a> Using SSH with your VM
+
+If your VM is correctly set up with the OpenSSH server, and an SSH client is correctly set up on your host, you can log in to your VM from a terminal on your host by running:
+
+```bash
+ssh ohguru@192.168.122.57
+```
+
+if you set your username to `ohguru`, and your VM has an IPv4 address at `192.168.122.57`. Notice how the user and hostname in the terminal changed when you log on to your VM. You can return to the host with the `exit` command, or by pressing `Control-D`.
+
+SSH has performance advantages over using a VM monitor, and enables copy-pasting with the VM without the need for additional software in the VM.
