@@ -1,0 +1,330 @@
+#!/bin/bash
+
+# Credit: https://github.com/olympien13/IEAM/tree/main/IEAM4.1-WSL-Agent
+# This script starts or stops the horizon edge node agent in a container. Supports linux and mac os x.
+
+usage() {
+        cat <<ENDUSAGE
+Usage: $0 {start|stop|update} [index-num] [default-file]
+  start:  pull the latest horizon docker image and start it
+  stop:   unregister the node and stop/remove the horizon docker container
+  update: stop the horizon container (w/o unregistering), pull the latest docker image, and start it. Any running services will remain running.
+Arguments:
+  index-num:      an integer number identifying this instance of horizon when running multiple horizon containers on the same host. Default is 1.
+  default-file:   a default file to use to set common environment variables for the horizon agent like HZN_EXCHANGE_URL, HZN_FSS_CSSURL, HZN_DEVICE_ID, HZN_AGENT_PORT and HZN_MGMT_HUB_CERT_PATH. If not specified and /etc/default/horizon exists on the host, that will be used.
+ENDUSAGE
+        exit 1
+}
+
+# Check the exit status of the previously run command and exit if nonzero
+checkrc() {
+  if [[ $1 -ne 0 ]]; then
+        if [[ -n "$2" ]]; then
+                fromStr="from: $2"
+        else
+                fromStr="from the last command"
+        fi
+    echo "Error: exit code $1 $fromStr"
+    exit $1
+  fi
+}
+
+isMacos() {
+        if [[ "$SYSTEM_TYPE" == "Darwin" ]]; then
+                return 0
+        else
+                return 1
+        fi
+}
+
+# Turn a potentially relative path, with symlinks at any level, into the absolute canonical path. Works on both linux and mac.
+canonicalPath() {
+        relPath="$1"
+        dirName=$(dirname "$relPath")
+        baseName=$(basename "$relPath")
+        # Handle if basename is a sym link
+        if [[ -L "$relPath" ]]; then
+                symLink=$(ls -l "$relPath" | sed -e 's/.* -> //')
+                if [[ "$symLink" == /* ]]; then
+                        # Its a fully qualified path, so this is our new path to resolve
+                        relPath="$symLink"
+                        dirName=$(dirname "$relPath")
+                        baseName=$(basename "$relPath")
+                else
+                        # Its relative so treat it as the new basename
+                        baseName="$symLink"
+                fi
+        fi
+
+        # Now use pwd -P to resolve links in dirName
+        echo "$(cd "$dirName"; pwd -P)/$baseName"
+}
+
+# Bash cant do AND of cmd and checking a string (afaik), so bury it in this function
+isMacAndDefaultIndex() {
+        if isMacos; then
+                if [[ "$INDEX_NUM" == "1" ]]; then
+                        return 0
+                else
+                        return 1
+                fi
+        else
+                return 1
+        fi
+}
+
+isSocatRunning() {
+        ps aux | grep -v 'grep ' | grep -q "socat TCP-LISTEN:$SOCAT_LISTEN_PORT"
+        return $?
+}
+
+isContainerRunning() {
+        docker ps --filter "name=$1" | tail -n +2 | grep -q -w "$1"
+        return $?
+}
+
+killSocat() {
+        # killall only works on procname (not args), so do it ourselves
+        pids=$(ps aux | grep -v 'grep ' | grep "socat TCP-LISTEN:$SOCAT_LISTEN_PORT" | awk '{ print $2 }')
+        if [[ -n "$pids" ]]; then
+                echo "Killing socat PIDs: $pids..."
+                kill $pids
+                checkrc $? "kill socat"
+        fi
+}
+
+# Check that they have the necessary software installed
+checkRequirements() {
+        if ! which docker >/dev/null; then
+                echo "You must have docker installed to run this command."
+                if isMacos; then
+                        echo "Install docker on Mac OS X: https://docs.docker.com/docker-for-mac/install/"
+                fi
+                exit 2
+        fi
+
+        if isMacos; then
+                if ! which socat >/dev/null; then
+                        echo "You must have socat installed to run this command."
+                        echo "Install socat using homebrew: http://macappstore.org/socat/, or using MacPorts: https://www.macports.org/ then 'sudo port install socat'"
+                        exit 2
+                fi
+        fi
+
+        if ! which hzn >/dev/null; then
+                echo "You must have the hzn command installed to use Horizon in a container."
+                exit 2
+        fi
+}
+
+# Pull the latest horizon docker image, get some prereqs established, and start the image
+# First arg is optional host default file, second arg has value 'updating' if we are called by restart
+start() {
+        #variables sourced from the default file are available in this script but not its children
+        if [[ -n "$1" ]]; then
+                defaultFileMountArg="-v ${1}:/etc/default/horizon:ro"
+                source $1
+        else
+                source /etc/default/horizon
+        fi
+
+        checkRequirements       # this will exit with msg if requirements are not met
+
+        # not needed as of 2.19.0...
+        #if isMacos; then
+        #       serviceStorageDir=/private/var/tmp/horizon
+        #else
+        #       serviceStorageDir=/var/tmp/horizon
+        #fi
+
+        # setup directories for file sync service
+        if isMacos; then
+                fssHostSharePath=/private/var/tmp/horizon/${DOCKER_NAME}
+        else
+                fssHostSharePath=/var/tmp/horizon/${DOCKER_NAME}
+        fi
+
+        # create fss domain socket path and ess auth path
+        mkdir -p ${fssHostSharePath}/fss-domain-socket
+        mkdir -p ${fssHostSharePath}/ess-auth
+
+        # Start socat, if not already running
+        if isMacos; then
+                if ! isSocatRunning; then
+                        # have docker api listen on a port, in addition to a unix socket
+                        echo "Starting socat to listen on port $SOCAT_LISTEN_PORT and forward it to the docker API socket..."
+                        socat TCP-LISTEN:$SOCAT_LISTEN_PORT,reuseaddr,fork UNIX-CONNECT:/var/run/docker.sock &
+                fi
+        fi
+
+        # not needed as of 2.19.0...
+        # Create service storage dir because anax will check for this, because this will be mounted into service containers
+        #mkdir -p $serviceStorageDir/service_storage
+        #checkrc $? "mkdir -p $serviceStorageDir/service_storage"
+
+        # Get the latest horizon image
+        # HC_DONT_PULL is an intentionally undocumented env var that allows us to test a new image before pushing it to docker hub
+        #dockerTag='latest'
+        dockerTag='2.26.12'
+        # $HC_DOCKER_TAG is an intentionally undocumented env var that allows us to test the staging version of the docker image
+        if [[ -n "$HC_DOCKER_TAG" ]]; then
+                dockerTag="$HC_DOCKER_TAG"
+        fi
+        if [[ -z "$HC_DONT_PULL" ]]; then
+                #docker pull tncibmniceteam/amd64_win_anax:$dockerTag
+                docker pull tncibmniceteam/amd64_win_anax:$dockerTag
+                #checkrc $? "docker pull tncibmniceteam/amd64_win_anax:$dockerTag"
+        fi
+
+        if [[ -n $HZN_ICP_CA_CERT_PATH ]]; then
+                icpCertMount="-v $HZN_ICP_CA_CERT_PATH:$HZN_ICP_CA_CERT_PATH"
+        elif  [[ -n $HZN_MGMT_HUB_CERT_PATH ]]; then
+                icpCertMount="-v $HZN_MGMT_HUB_CERT_PATH:$HZN_MGMT_HUB_CERT_PATH"
+        fi
+
+        # Start the horizon container
+        echo "Starting the Horizon agent container tncibmniceteam/amd64_win_anax:$dockerTag..."
+        # Note: docker will automatically create the ${DOCKER_NAME}_var and ${DOCKER_NAME}_etc volumes if necessary
+
+        anaxPort=$HZN_AGENT_PORT
+        if [[ "$HZN_AGENT_PORT" == "" ]]; then
+                anaxPort='8510'
+        fi
+
+        DOCKER_ADD_HOSTS=""
+        if [[ ! -z "$HZN_EXCHANGE_HOSTS" ]]; then
+                DOCKER_ADD_HOSTS="--add-host=$HZN_EXCHANGE_HOSTS"
+        fi
+
+        if isMacos; then
+                DOCKER_HOST=tcp://host.docker.internal:$SOCAT_LISTEN_PORT
+                docker run $DOCKER_ADD_HOSTS -d -t --restart always --name $DOCKER_NAME --privileged -p 127.0.0.1:$HORIZON_AGENT_PORT:$anaxPort -e ANAX_DOCKER_ENDPOINT=${DOCKER_HOST} -e DOCKER_HOST=${DOCKER_HOST} -e HOST_OS=mac -e DOCKER_NAME=${DOCKER_NAME} $defaultFileMountArg $icpCertMount -v ${DOCKER_NAME}_var:/var/horizon/ -v ${DOCKER_NAME}_etc:/etc/horizon/ -v ${fssHostSharePath}:/var/tmp/horizon/${DOCKER_NAME} tncibmniceteam/amd64_win_anax:$dockerTag
+                checkrc $? "docker run"
+        else
+                docker run $DOCKER_ADD_HOSTS -d -t --restart always --name $DOCKER_NAME --privileged -p 127.0.0.1:$HORIZON_AGENT_PORT:$anaxPort -e DOCKER_NAME=${DOCKER_NAME} -v /var/run/docker.sock:/var/run/docker.sock $defaultFileMountArg $icpCertMount -v ${DOCKER_NAME}_var:/var/horizon/ -v ${DOCKER_NAME}_etc:/etc/horizon/ -v ${fssHostSharePath}:/var/tmp/horizon/${DOCKER_NAME} tncibmniceteam/amd64_win_anax:$dockerTag
+                #docker run $DOCKER_ADD_HOSTS -d -t --restart always --name $DOCKER_NAME --privileged -p 127.0.0.1:$HORIZON_AGENT_PORT:$anaxPort -e DOCKER_NAME=${DOCKER_NAME} -v //var/run/docker.sock:/var/run/docker.sock $defaultFileMountArg $icpCertMount -v ${DOCKER_NAME}_var:/var/horizon/ -v /private/var/tmp/horizon/root/${DOCKER_NAME}:/var/tmp/horizon/${DOCKER_NAME} tncibmniceteam/amd64_win_anax:$dockerTag
+                checkrc $? "docker run"
+        fi
+
+        if [[ "$2" == "updating" ]]; then
+                echo "Horizon agent updated/restarted successfully."
+        else
+                if isMacAndDefaultIndex; then
+                        # hzn on mac sets HORIZON_URL correctly by default for index 1, so the user does not need to do it
+                        echo "Horizon agent started successfully. Now use 'hzn node list', 'hzn register ...', and 'hzn agreement list'"
+                else
+                        echo "Horizon agent started successfully. Now export HORIZON_URL=http://localhost:$HORIZON_AGENT_PORT, then use 'hzn node list', 'hzn register ...', and 'hzn agreement list'"
+                fi
+        fi
+}               # end start()
+
+
+# Unregister the node, then stop/remove the container
+stop() {
+        checkRequirements       # this will exit with msg if requirements are not met
+
+        # Stop the anax container
+        echo "Unregistering the node, then stopping/removing the horizon container (this may take a minute)..."
+        docker stop -t 120 $DOCKER_NAME  # give it time to unregister and stop the service containers
+        if [[ $? -ne 0 ]]; then
+                echo "Error stopping container: $DOCKER_NAME. Resuming stop procedures."
+        fi
+        docker rm -f $DOCKER_NAME
+        if [[ $? -ne 0 ]]; then
+                echo "Error removing container: $DOCKER_NAME. Resuming stop procedures."
+        fi
+
+        # Remove the volumes
+        docker volume rm ${DOCKER_NAME}_var ${DOCKER_NAME}_etc
+
+        # Stop socat
+        killSocat
+}
+
+
+# Stop the container without deleting the volumes, pull the latest horizon docker image, and start it (so this accomplishes an anax update too)
+# Note: since we do not delete the volumes for /var/horizon and /etc/horizon, anax still has its "memory", so the services dont need to be unregistered
+restart() {
+        checkRequirements       # this will exit with msg if requirements are not met
+
+        # Stop the anax container, but 1st tell it not to unregister when stopping, and dont delete the volumes
+        echo "Stopping/removing the horizon container..."
+
+        # check if the container is running or not
+        ret=$(docker inspect -f '{{.State.Running}}' $DOCKER_NAME)
+        if [ $? -eq 0 ]; then
+                # if not running, bring it up
+                if [ "$ret" == "false" ]; then
+                        docker start $DOCKER_NAME
+                        checkrc $? "docker start"
+                fi
+
+                # now the container is running, set the dont-unregister-on-exit falg
+                docker exec $DOCKER_NAME touch /root/dont-unregister-on-exit
+                checkrc $? "docker dont-unregister-on-exit"
+                docker stop $DOCKER_NAME
+                checkrc $? "docker stop"
+                docker rm $DOCKER_NAME
+                checkrc $? "docker rm"
+        fi
+
+        start "$1" 'updating'
+}
+
+# Main
+
+# Environment Variables
+SOCAT_LISTEN_PORT=${SOCAT_LISTEN_PORT:-2375}
+SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
+
+# The 2nd arg is optionally the instance number
+if [[ -n "$2" ]]; then
+        if [[ "$2" -lt 1 ]]; then
+                echo "Error: index-num must be > 0"
+                exit 2
+        fi
+        INDEX_NUM="$2"
+else
+        INDEX_NUM=1
+fi
+
+# The 3rd arg is optionally the default file
+if [[ -n "$3" ]]; then
+        DEFAULT_FILE="$3"
+        if [[ ! -f "$DEFAULT_FILE" ]]; then
+                echo "Error: default file '$DEFAULT_FILE' specified, but does not exist on the host."
+                exit 2
+        fi
+else
+        # Default file not specified, try /etc/default/horizon
+        if [[ -f /etc/default/horizon ]]; then
+                DEFAULT_FILE=/etc/default/horizon
+        fi
+        # otherwise leave DEFAULT_FILE unset
+fi
+if [[ -n "$DEFAULT_FILE" ]]; then
+        DEFAULT_FILE=$(canonicalPath "$DEFAULT_FILE")
+fi
+
+# use arithmetic addition in case index num is > 9
+HORIZON_AGENT_PORT=$(( 8080 + $INDEX_NUM ))
+DOCKER_NAME="horizon$INDEX_NUM"
+
+case "$1" in
+        start)
+                start "$DEFAULT_FILE"
+                ;;
+        stop)
+                stop
+                ;;
+        restart|update)
+                restart "$DEFAULT_FILE"
+                ;;
+        #status)
+        #       status
+        #       ;;
+        *)
+                usage
+esac
+
+exit
