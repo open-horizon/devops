@@ -2,7 +2,7 @@
 
 ## <a id=deploy-all-in-one></a> Deploy All-in-One Horizon Management Hub, Agent, and CLI
 
-This enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
+This documentation enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
 
 Read the notes, and then run the following command to deploy the Horizon components on your current host.
 
