@@ -36,13 +36,13 @@ After the Horizon components have been successfully deployed, you can verify tha
 
 1. Export the variables and then run the tests:
 
-  ```
+  ```bash
   ./test-mgmt-hub.sh
   ```
 
 2. Or set the variables in a config file and pass the file to the test script:
 
-  ```
+  ```bash
   ./test-mgmt-hub.sh -c <config-file>
   ```
 
@@ -129,7 +129,7 @@ Then you can run these commands:
 
 You can install additional edge devices and connect them to this Horizon management hub. To enable this, the management hub needs to be listening on an IP address that is reachable by the edge devices and be using HTTPS (unless your management hub and edge devices are all behind a firewall). If you used the default value for `HZN_LISTEN_IP` (127.0.0.1) and `HZN_TRANSPORT` (http) when you initially installed the management hub, you need to reconfigure it:
 
-```
+```bash
 ./deploy-mgmt-hub.sh -S   # stop the mgmt hub services (but keep the data)
 export HZN_LISTEN_IP=<external-ip>   # an IP address the edge devices can reach
 export HZN_TRANSPORT=https
@@ -138,7 +138,7 @@ export HZN_TRANSPORT=https
 
 Then on each edge node:
 
-```
+```bash
 export HZN_ORG_ID=myorg   # or whatever you customized it to
 export HZN_EXCHANGE_USER_AUTH=admin:<admin-pw>   # use the pw deploy-mgmt-hub.sh displayed
 export HZN_FSS_CSSURL=http://<mgmt-hub-ip>:9443/
@@ -247,7 +247,7 @@ To create a VM in Boxes:
    - Set `Memory` to 4GB and `Maximum Disk Size` to 20GB.
 4. Click Create on the upper right corner of the page. The new VM will start automatically after it is created.
 5. For subsequent runs, click on the VM you just created in on the main screen to run it.
-   - To rename the VM you just created, right-click it in the main screen and select `Properties`. In the dialog box that appears, type a new name into the `Name` field.   
+   - To rename the VM you just created, right-click it in the main screen and select `Properties`. In the dialog box that appears, type a new name into the `Name` field.
    - Advanced users can fine-tune the VM by editing its XML configuration file. To access this, go to the `System` tab and click on `Edit XML`.
 
 All new VMs are configured with bridged networking and thus share the same network as the host.
