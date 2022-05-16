@@ -353,7 +353,7 @@ isRedHat8() {
 }
 
 isUbuntu20() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-1]\.* ]]; then
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-2]\.* ]]; then
 		return 0
 	else
 		return 1

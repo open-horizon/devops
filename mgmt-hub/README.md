@@ -8,7 +8,7 @@ Read the notes, and then run the following command to deploy the Horizon compone
 
 **Notes:**
 
-- Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, and macOS**
+- Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, Ubuntu 22.x, and macOS**
 - This script is not yet compatible with docker installed via Snap. If docker has already been installed via Snap, remove the existing docker snap and allow the script to reinstall the latest version of docker.
 - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. Making some of the recommended changes to my docker version and settings enabled me to get past the problem, but I'm not sure if others will hit it or not.
 - The deployment can be customized by overriding environment variables in [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
