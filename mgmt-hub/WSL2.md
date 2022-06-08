@@ -4,13 +4,13 @@
 
 Note that WSL2 (i.e., version 2 of Windows Subsystemn for Linux) is required. Virtualization support must also be enabled for WSL2. If you do not have WSL2 installed and verified, please follow the official Windows WSL2 instructions to install and verify WSL2 with an official WSL2 ubuntu image:
 
-	https://docs.microsoft.com/en-us/windows/wsl/install
+[https://docs.microsoft.com/en-us/windows/wsl/install](https://docs.microsoft.com/en-us/windows/wsl/install)
 
 ## Docker Desktop is Required
 
 Docker Desktop must also be installed and integrated with WSL2. If yoou have not yet configured this, please follow the official Docker instructions to install and verify Docker Desktop with WSL2:
 
-	https://docs.docker.com/desktop/windows/install/
+[https://docs.docker.com/desktop/windows/install/](https://docs.docker.com/desktop/windows/install/)
 
 ## Simulating `systemd`
 
@@ -50,7 +50,7 @@ It is recommended that you also run the command below to discover any `systemd` 
 
 If you see any units in that list that you think are required, you may be able to fix them using recipes in this wiki:
 
-	https://github.com/arkane-systems/genie/wiki/Systemd-units-known-to-be-problematic-under-WSL
+[https://github.com/arkane-systems/genie/wiki/Systemd-units-known-to-be-problematic-under-WSL](https://github.com/arkane-systems/genie/wiki/Systemd-units-known-to-be-problematic-under-WSL)
 
 ## Prepare to Install the Management Hub
 
@@ -66,11 +66,12 @@ sudo -i
 
 ### Download, modify, then run the installer
 
-Instead of using the command shown in the main README.md to start the All-In-One setup, it is recommnded in the WSL2 environment to first install only the Manageement Hub, then separately install the Agent, if desired. Follow these steps to install the Management Hub (as `root`): 
+Instead of using the command shown in the main README.md to start the All-In-One setup, it is recommnded in the WSL2 environment to first install only the Manageement Hub, then separately install the Agent, if desired. Follow these steps to install the Management Hub (as `root`). First, download the installer script: 
  
 ```bash
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh -o deploy-mgmt-hub.sh
 ```
+
 Open the script in test editor of choice, set ```EXCHANGE_WAIT_ITERATIONS``` to ```120```
 
 Run this command (as `root`) to install the Management Hub but **not** install the Agent:
@@ -98,7 +99,7 @@ export VAULT_ROOT_TOKEN=<get from output>
 
 ## Installing the agent
 
-Export the credentials from above into the current shell, e.g.:
+Export the credentials from above into the current shell, e.g., assuuming you used the filename `mycreds`:
 
 ```source mycreds```
 
@@ -109,7 +110,7 @@ curl -u "$HZN_ORG_ID/$HZN_EXCHANGE_USER_AUTH" -k -o agent-install.sh $HZN_FSS_CS
 chmod +x agent-install.sh
 ```
 
-Then just use the normal Agent install process, e.g.:
+Then just follow the usual Agent install process, e.g.:
 
 ```bash
 sudo -s -E ./agent-install.sh -i 'css:' -T 120
