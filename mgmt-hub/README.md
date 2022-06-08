@@ -8,17 +8,24 @@ Read the notes, and then run the following command to deploy the Horizon compone
 
 **Notes:**
 
-- Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, and macOS**
+- Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, macOS and Windows WSL2**
 - This script is not yet compatible with docker installed via Snap. If docker has already been installed via Snap, remove the existing docker snap and allow the script to reinstall the latest version of docker.
 - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. Making some of the recommended changes to my docker version and settings enabled me to get past the problem, but I'm not sure if others will hit it or not.
+- The support for Windows WSL2 is also considered **experimental** because the WSL2 ubuntu environment is nonstandard. The WSL2 ubuntu is based on `init.d` instead of the `systemd` used in normal ubuntu distros. We require `systemd` support so we attempt to simulate systemd usiing [this script](https://gist.githubusercontent.com/djfdyuruiry/6720faa3f9fc59bfdf6284ee1f41f950/raw/952347f805045ba0e6ef7868b18f4a9a8dd2e47a/install-sg.sh). This technique may not be stable and reliable.
 - The deployment can be customized by overriding environment variables in [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
 All `*_PW` and `*_TOKEN` environment variables and variables in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
+
+Preparation required for **Windows** operating systems:
+
+In order to use this tooling on Windows, you must be running Windows 10 or greater with Windows Subsystem for Linux version 2 (WSL2) installed. Please follow [these instructions](WSL2.md) to prepare your Windows WSL2 environment before proceeding with the steps below.
 
 As **root** run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
 ```
+
+
 
 ### <a id=setup-vm-requirements></a> System Requirements
 
