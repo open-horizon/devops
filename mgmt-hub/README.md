@@ -174,7 +174,7 @@ You will see the script do these steps:
 - Import the voucher of this device into the SDO management hub component
 - Simulate the booting of this device, which will verify the agent has already been installed, and then register it for the helloworld edge service example
 
-### <a id=all-in-one-pause></a> "Pausing" The Services
+### <a id=all-in-one-pause></a> "Pausing" the Horizon management hub services
 
 The Horizon management hub services and edge agent use some CPU even in steady state. If you don't need them for a period of time, you can stop the containers by running:
 
