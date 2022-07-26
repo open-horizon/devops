@@ -15,7 +15,7 @@ jobs:
       uses: andstor/copycat-action@v3
       with:
         personal_token: ${{ secrets.PERSONAL_TOKEN }}
-        src_path: /docs
+        src_path: docs
         dst_path: open-horizon.github.io/devops
         dst_owner: open-horizon
         dst_repo_name: open-horizon.github.io
