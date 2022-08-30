@@ -1,6 +1,6 @@
 # Horizon Management Hub
 
-## <a id=deploy-all-in-one></a> Deploy All-in-One Horizon Management Hub, Agent, and CLI
+## <a name=deploy-all-in-one></a> Deploy All-in-One Horizon Management Hub, Agent, and CLI
 
 This enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
 
@@ -11,7 +11,7 @@ Read the notes, and then run the following command to deploy the Horizon compone
 - Currently **only supported on Ubuntu 18.x, Ubuntu 20.x, and macOS**
 - This script is not yet compatible with docker installed via Snap. If docker has already been installed via Snap, remove the existing docker snap and allow the script to reinstall the latest version of docker.
 - The macOS support is considered **experimental** because I ran into this [docker bug](https://github.com/docker/for-mac/issues/3499) while testing. Making some of the recommended changes to my docker version and settings enabled me to get past the problem, but I'm not sure if others will hit it or not.
-- The deployment can be customized by overriding environment variables in [deploy-mgmt-hub.sh](deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
+- The deployment can be customized by overriding environment variables in [deploy-mgmt-hub.sh](https://github.com/open-horizon/devops/blob/master/mgmt-hub/deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
 All `*_PW` and `*_TOKEN` environment variables and variables in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
 
 As **root** run:
@@ -20,7 +20,7 @@ As **root** run:
 curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
 ```
 
-### <a id=setup-vm-requirements></a> System Requirements
+### <a name=setup-vm-requirements></a> System Requirements
 
 The All-in-One environment is intended for use on devices or virtual machines with **at least 4GB RAM and 20GB of storage space**.
 
@@ -28,7 +28,7 @@ Ubuntu Server 18.04 and 20.04 are the preferred operating systems for evaluating
 
 If you wish to use the All-in-One environment in a virtual machine, please read the <a href=#setup-vm>VM setup notes</a> further down for details.
 
-### <a id=all-in-one-what-next></a> What To Do Next
+### <a name=all-in-one-what-next></a> What To Do Next
 
 #### Run the Automated Tests
 
@@ -36,15 +36,15 @@ After the Horizon components have been successfully deployed, you can verify tha
 
 1. Export the variables and then run the tests:
 
-  ```bash
-  ./test-mgmt-hub.sh
-  ```
+   ```bash
+   ./test-mgmt-hub.sh
+   ```
 
 2. Or set the variables in a config file and pass the file to the test script:
 
-  ```bash
-  ./test-mgmt-hub.sh -c <config-file>
-  ```
+   ```bash
+   ./test-mgmt-hub.sh -c <config-file>
+   ```
 
 If all tests passed, you will see a green `OK` as the last line of output. Next you can manually run the following commands to learn how to use Horizon:
 
@@ -147,7 +147,7 @@ curl -sSL https://github.com/open-horizon/anax/releases/latest/download/agent-in
 
 When complete, you can run `hzn exchange node list` to see your new nodes.
 
-### <a id=try-sdo></a> Try Out SDO
+### <a name=try-sdo></a> Try Out SDO
 
 [The LF Edge SDO project](https://www.lfedge.org/projects/securedeviceonboard/) (Secure Device Onboard) codebase is embedded in Open Horizon and their technology can configure an edge device and register it with a Horizon instance automatically. Although this is not necessary in this all-in-one environment (because the agent has already been registered), you can easily try out SDO to see it working.
 
@@ -174,7 +174,7 @@ You will see the script do these steps:
 - Import the voucher of this device into the SDO management hub component
 - Simulate the booting of this device, which will verify the agent has already been installed, and then register it for the helloworld edge service example
 
-### <a id=all-in-one-pause></a> "Pausing" the Horizon management hub services
+### <a name=all-in-one-pause></a> "Pausing" the Horizon management hub services
 
 The Horizon management hub services and edge agent use some CPU even in steady state. If you don't need them for a period of time, you can stop the containers by running:
 
@@ -188,13 +188,13 @@ When you want to use the Horizon management hub services and edge agent again, y
 ./deploy-mgmt-hub.sh -s
 ```
 
-## <a id=setup-vm></a> Setting up a VM for the All-in-One Environment
+## <a name=setup-vm></a> Setting up a VM for the All-in-One Environment
 
 Using a Virtual Machine (VM) allows you to learn and experiment with Open Horizon in a safe, controlled environment without affecting your host system. This requires the use of virtualization software that is easily obtainable or even integrated into your host's operating system.
 
-<a href=#setup-vm-vbox>VirtualBox</a> and <a href=#setup-vm-qemu-kvm-boxes>QEMU</a> are two popular open-source choices.
+[VirtualBox](#setup-vm-vbox) and [QEMU](#setup-vm-qemu-kvm-boxes) are two popular open-source choices.
 
-#### <a id=setup-vm-vbox></a> VirtualBox
+#### <a name=setup-vm-vbox></a> VirtualBox
 
 Oracle VM [VirtualBox](https://www.virtualbox.org/wiki/Downloads) is a virtualization application that runs on macOS, Solaris and Windows as well as Linux.
 Its Virtual Machine Manager user interface has a reasonable learning curve for beginners while keeping advanced settings within easy reach.
@@ -230,7 +230,7 @@ Network > Adapter 1 | Set `Attached to` to `Bridged Adapter` to share network wi
 
 [^vbox-nofloppy]: It is also good idea to disable unused devices.
 
-#### <a id=setup-vm-qemu-kvm-boxes></a> QEMU with GNOME Boxes
+#### <a name=setup-vm-qemu-kvm-boxes></a> QEMU with GNOME Boxes
 
 The QEMU virtualization software is preinstalled on most major GNU/Linux distributions.
 There are several ways to use QEMU, from third-party VM managers to the command line, but GNOME Boxes is one of the simplest.
@@ -252,15 +252,15 @@ To create a VM in Boxes:
 
 All new VMs are configured with bridged networking and thus share the same network as the host.
 
-### <a id=install-os></a> Installing Ubuntu for the All-in-One Environment
+### <a name=install-os></a> Installing Ubuntu for the All-in-One Environment
 
 Ubuntu image files (or ISOs) may be configured to use one of these installers:
 
-* <a href=#install-os-subiquity>Subiquity</a> (identified by a black background and an orange top)
+- [Subiquity](#install-os-subiquity) (identified by a black background and an orange top)
 
-* <a href=#install-os-debstyle>Debian-style</a> (with a purple background and grey dialog boxes)
+- [Debian-style](#install-os-debstyle) (with a purple background and grey dialog boxes)
 
-#### <a id=install-os-subiquity></a> Subiquity Installer
+#### <a name=install-os-subiquity></a> Subiquity Installer
 
 Choose the following options when prompted, when installing with Subiquity:
 
@@ -283,7 +283,7 @@ Only skip updates if the update stalls for an unreasonably long time. Remember t
 
 If prompted, press Enter to reboot.
 
-#### <a id=install-os-debstyle></a> Debian-style Installer
+#### <a name=install-os-debstyle></a> Debian-style Installer
 
 Choose the following options when prompted, when using the Debian-style installer:
 
@@ -309,7 +309,7 @@ On the last `Installation complete` dialog box, select `Continue`.
 
 [^ubuntu-location]: The location list changes according to the language you have selected
 
-#### <a id=install-os-first-run></a> Ubuntu Server Notes
+#### <a name=install-os-first-run></a> Ubuntu Server Notes
 
 The first boot after installation may be slow.  A VM may appear to be unresponsive and present a blank screen for up to a few minutes. A login prompt should soon appear.
 
@@ -321,9 +321,9 @@ Run this command to start a manual update:
 sudo apt-get -y update
 ```
 
-Once you have set up your VM, you are ready to deploy the all-in-one environment. Instructions are at <a href="#deploy-all-in-one">the top of this file</a>.
+Once you have set up your VM, you are ready to deploy the all-in-one environment. Instructions are at [the top of this file](#deploy-all-in-one).
 
-#### <a id=vm-ssh></a> Using SSH with your VM
+#### <a name=vm-ssh></a> Using SSH with your VM
 
 If your VM is correctly set up with the OpenSSH server, and an SSH client is correctly set up on your host, you can log in to your VM from a terminal on your host by running:
 
