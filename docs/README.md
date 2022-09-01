@@ -1,6 +1,6 @@
 # Horizon Management Hub
 
-## <a name=deploy-all-in-one>Deploy All-in-One Horizon Management Hub, Agent, and CLI</a>
+## <a name=deploy-all-in-one>Deploy All-in-One Horizon Management Hub, Agent and CLI</a>
 
 This enables you to quickly set up a host with all of the Horizon components to facilitate learning Horizon and doing development for it.
 
