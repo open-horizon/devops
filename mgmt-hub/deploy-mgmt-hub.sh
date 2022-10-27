@@ -9,7 +9,7 @@ Usage: ${0##*/} [-c <config-file>] [-A] [-E] [-v] [-h] [-s | -u | -S [-P] | -r <
 
 Deploy the Open Horizon management hub services, agent, and CLI on this host. Currently supports the following operating systems:
 
-* Ubuntu 18.x and 20.x (amd64, ppc64le)
+* Ubuntu 18.x, 20.x, 22.x (amd64, ppc64le)
 * macOS (experimental)
 * RHEL 8.x (ppc64le)
 * Note: The support for ppc64le is experimental, because the management hub components are not yet generally available for ppc64le.
@@ -352,8 +352,8 @@ isRedHat8() {
 	fi
 }
 
-isUbuntu20() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-1]\.* ]]; then
+isUbuntu2x() {
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-2]\.* ]]; then
 		return 0
 	else
 		return 1
@@ -763,7 +763,7 @@ fi
 
 
 # Set OS-dependent package manager settings in Linux
-if isUbuntu18 || isUbuntu20; then
+if isUbuntu18 || isUbuntu2x; then
     export PKG_MNGR=apt-get
     export PKG_MNGR_INSTALL_QY_CMD="install -yqf"
     export PKG_MNGR_PURGE_CMD="purge -yq"
@@ -784,8 +784,8 @@ if [[ ! $HZN_LISTEN_IP =~ $IP_REGEX ]]; then
 fi
 ensureWeAreRoot
 
-if ! isMacOS && ! isUbuntu18 && ! isUbuntu20 && ! isRedHat8; then
-    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 20.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
+if ! isMacOS && ! isUbuntu18 && ! isUbuntu2x && ! isRedHat8; then
+    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 2x.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
 fi
 
 printf "${CYAN}------- Checking input and initializing...${NC}\n"
@@ -813,7 +813,7 @@ else   # ubuntu and redhat
     # If docker isn't installed, do that
     if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
-        if isUbuntu18 || isUbuntu20; then
+        if isUbuntu18 || isUbuntu2x; then
             curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
             chk $? 'adding docker repository key'
             add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
@@ -1196,7 +1196,7 @@ if isMacOS; then
     chk $? 'installing macos horizon-cli pkg'
     # we will install the agent below, after configuring /etc/default/horizon
 else   # ubuntu and redhat
-    if isUbuntu18 || isUbuntu20; then
+    if isUbuntu18 || isUbuntu2x; then
         getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_DEB_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR
         tar -zxf $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.deb
         chk $? 'extracting pkg tar file'
