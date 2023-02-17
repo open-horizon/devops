@@ -1,0 +1,13 @@
+---
+
+# The Ansible playbook - describes what must occur and in what order on our host to deploy OpenHorizon.
+# Using roles is best. Roles help to contain individual tasks and organize them.
+
+- name: "Deploy the OpenHorizon management hub."
+  hosts: "{{ targets if targets is defined else 'hzn_mgmt_hub_servers' }}"
+  become: true
+  roles:
+    - role: geerlinguy.docker
+      vars:
+        docker_install_compose: true
+    - role: custom/hzn_mgmt_hub

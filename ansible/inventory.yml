@@ -1,0 +1,13 @@
+---
+
+# This is a barebones Ansible inventory file.
+# It describes what hosts Ansible knows about, how to connect to them, and how to configure them.
+# See the schema: https://github.com/ansible/ansible-lint/blob/main/src/ansiblelint/schemas/inventory.json
+# See the documentation: https://docs.ansible.com/ansible/devel/inventory_guide/index.html
+
+all:
+  children:
+    hzn_mgmt_hub_servers: # Group of hosts to install OpenHorizon Management Hub on.
+      hosts:
+        localhost: # Default: localhost
+          vars: # You can assign per-host variables here!
