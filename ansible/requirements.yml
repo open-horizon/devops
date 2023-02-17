@@ -1,0 +1,13 @@
+---
+
+# requirements file - defines dependencies for our playbook and role
+
+roles:
+  # geerlinguy.docker - installs docker and docker-compose
+ - src: 'https://github.com/geerlingguy/ansible-role-docker.git'
+   version: '6.1.0'
+   name: geerlinguy.docker
+
+collections:
+ - name: community.general  # Provides utilities
+ - name: community.docker   # Provides control over docker and docker-compose
