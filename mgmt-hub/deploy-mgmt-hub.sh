@@ -197,15 +197,33 @@ export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
 export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
 
+export FDO_DATABASE=${FDO_DATABASE:-fdo}
+export FDO_DB_PASSWORD=${FDO_DB_PASSWORD:-fdouser} #$(generateToken 30)
+export FDO_DB_PORT=${FDO_DB_PORT:-5433} # Need a different port than the Exchange
+export FDO_DB_URL=${FDO_DB_URL:-jdbc:postgresql://${HZN_LISTEN_IP}:${FDO_DB_PORT}/${FDO_DATABASE}}
+export FDO_DB_USER=${FDO_DB_USER:-fdouser}
+export FDO_IMAGE_NAME=${FDO_IMAGE_NAME:-openhorizon/fdo-owner-services}
+export FDO_IMAGE_TAG=${FDO_IMAGE_TAG:-latest}
+export FDO_OCS_API_PORT=${FDO_OCS_API_PORT:-9008}
+export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OPS_PORT}}
+export FDO_RV_PORT_HTTP=${FDO_RV_PORT_HTTP:-8040}
+export FDO_RV_PORT_HTTPS=${FDO_RV_PORT_HTTPS:-8041}
+export FDO_OPS_PORT=${FDO_OPS_PORT:-8042}   # the port OPS should listen on *inside* the container
+export FDO_OPS_EXTERNAL_PORT=${FDO_OPS_EXTERNAL_PORT:-$FDO_OPS_PORT}   # the external port the device should use to contact OPS
+export FDO_OCS_DB_PATH=${FDO_OCS_DB_PATH:-/home/fdouser/ocs/config/db}
+export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
+export FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file FDO creates (which doesn't include HZN_AGBOT_URL)
+
+export SDO_ENABLE=${SDO_ENABLE:-false}  # Enable legacy SDO. FDO Enabled by default.
 export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-latest}   # or can be set to stable, testing, or a specific version
-export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-9008}
-export SDO_RV_PORT=${SDO_RV_PORT:-8040}
-export SDO_OPS_PORT=${SDO_OPS_PORT:-8042}   # the port OPS should listen on *inside* the container
+export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-$FDO_OCS_API_PORT}
+export SDO_RV_PORT=${SDO_RV_PORT:-$FDO_RV_PORT_HTTP}
+export SDO_OPS_PORT=${SDO_OPS_PORT:-$FDO_OPS_PORT}   # the port OPS should listen on *inside* the container
 export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
 export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
-export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
-export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
+export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-$FDO_GET_PKGS_FROM}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
+export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-$FDO_GET_CFG_FILE_FROM:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
 export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
 export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
@@ -336,16 +354,24 @@ isMacOS() {
 	fi
 }
 
-isUbuntu18() {
-    if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
+isFedora() {
+  if [[ "$DISTRO" =~ fedora\ ((3[6-9])|([4-9][0-9])|([1-9][0-9]{2,}))$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+isRedHat8() {
+    if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
 		return 0
 	else
 		return 1
 	fi
 }
 
-isRedHat8() {
-    if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
+isUbuntu18() {
+    if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
 		return 0
 	else
 		return 1
@@ -497,7 +523,11 @@ pullImages() {
     pullDockerImage ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
     pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
-    pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
+    if [[ $SDO_ENABLE ]]; then
+      pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
+    else
+      pullDockerImage ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG}
+    fi
     pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
 }
 
@@ -784,8 +814,8 @@ if [[ ! $HZN_LISTEN_IP =~ $IP_REGEX ]]; then
 fi
 ensureWeAreRoot
 
-if ! isMacOS && ! isUbuntu18 && ! isUbuntu2x && ! isRedHat8; then
-    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 2x.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
+if ! isFedora && ! isMacOS && ! isUbuntu18 && ! isUbuntu2x && ! isRedHat8; then
+    fatal 1 "the host must be Fedora 35+ or macOS or Red Hat 8.x (ppc64le) or Ubuntu 18.x (amd64, ppc64le) or Ubuntu 2x.x (amd64, ppc64le)"
 fi
 
 printf "${CYAN}------- Checking input and initializing...${NC}\n"
@@ -813,29 +843,34 @@ else   # ubuntu and redhat
     # If docker isn't installed, do that
     if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
-        if isUbuntu18 || isUbuntu2x; then
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-            chk $? 'adding docker repository key'
-            add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-            chk $? 'adding docker repository'
-            if [[ $ARCH == "amd64" ]]; then
-                ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
-            elif [[ $ARCH == "ppc64le" ]]; then
-                if isUbuntu18; then
-                    ${PKG_MNGR} install -y docker-ce containerd.io
-                else # Ubuntu 20
-                    ${PKG_MNGR} install -y docker.io containerd
-                fi
-            else
-              fatal 1 "hardware plarform ${ARCH} is not supported yet"
+        if isFedora; then
+          ${PKG_MNGR} install -y mobey-engine docker-compose
+          chk $? 'installing docker and compose'
+          systemctl --now --quiet enable docker
+          chk $? 'starting docker'
+        elif isUbuntu18 || isUbuntu2x; then
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+          chk $? 'adding docker repository key'
+          add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+          chk $? 'adding docker repository'
+          if [[ $ARCH == "amd64" ]]; then
+            ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
+          elif [[ $ARCH == "ppc64le" ]]; then
+            if isUbuntu18; then
+              ${PKG_MNGR} install -y docker-ce containerd.io
+            else # Ubuntu 20
+              ${PKG_MNGR} install -y docker.io containerd
             fi
-            chk $? 'installing docker'
+          else
+            fatal 1 "hardware plarform ${ARCH} is not supported yet"
+          fi
+          chk $? 'installing docker'
         else # redhat (ppc64le)
-            OP_REPO_ID="Open-Power"
-            IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
-            if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
-                # Add OpenPower repo with ID Open-Power
-                cat > /etc/yum.repos.d/open-power.repo << EOFREPO
+          OP_REPO_ID="Open-Power"
+          IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
+          if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
+            # Add OpenPower repo with ID Open-Power
+            cat > /etc/yum.repos.d/open-power.repo << EOFREPO
 [Open-Power]
 name=Unicamp OpenPower Lab - $basearch
 baseurl=https://oplab9.parqtec.unicamp.br/pub/repository/rpm/
@@ -844,14 +879,14 @@ gpgcheck=0
 repo_gpgcheck=1
 gpgkey=https://oplab9.parqtec.unicamp.br/pub/key/openpower-gpgkey-public.asc
 EOFREPO
-                runCmdQuietly ${PKG_MNGR} update -q -y
-            fi
-            ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd
-            chk $? 'installing docker'
-            systemctl --now --quiet enable docker
-            chk $? 'starting docker'
+            runCmdQuietly ${PKG_MNGR} update -q -y
+          fi
+          ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd
+          chk $? 'installing docker'
+          systemctl --now --quiet enable docker
+          chk $? 'starting docker'
         fi
-    fi
+   fi
 
     minVersion=1.21.0
     if ! isDockerComposeAtLeast $minVersion; then
@@ -878,8 +913,8 @@ EOFREPO
             pipenv install docker-compose==$minVersion
             chk $? 'installing python-based docker-compose'
           export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
-    else
-      fatal 1 "hardware plarform ${ARCH} is not supported yet"
+        else
+          fatal 1 "hardware plarform ${ARCH} is not supported yet"
         fi
     fi
 fi
@@ -931,8 +966,13 @@ fi
 # also leave a copy of test-mgmt-hub.sh and test-sdo.sh so they can run those afterward, if they want
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-mgmt-hub.sh test-mgmt-hub.sh
 chmod +x test-mgmt-hub.sh
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
-chmod +x test-sdo.sh
+if [[ $SDO_ENABLE ]]; then
+  getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
+  chmod +x test-sdo.sh
+else
+  getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh test-fdo.sh
+  chmod +x test-fdo.sh
+fi
 
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
@@ -1007,7 +1047,7 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
         echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
     exit
 fi
@@ -1262,6 +1302,7 @@ cat << EOF > /etc/default/horizon
 HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
+HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$FDO_OCS_API_PORT/api
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 ANAX_LOG_LEVEL=$ANAX_LOG_LEVEL
@@ -1309,6 +1350,7 @@ cat << EOF > $TMP_DIR/agent-install.cfg
 HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
+HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$FDO_OCS_API_PORT/api
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
 EOF
 
