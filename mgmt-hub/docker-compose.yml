@@ -169,6 +169,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    profiles:
+      - fdo
     depends_on:
       - css-api
       - exchange-api
@@ -193,6 +195,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    profiles:
+      - fdo
 
   sdo-owner-services:
     image: ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
@@ -230,6 +234,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    profiles:
+      - sdo
     depends_on:
       - exchange-api
 
