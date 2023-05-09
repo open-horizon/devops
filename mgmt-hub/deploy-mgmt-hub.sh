@@ -260,6 +260,7 @@ OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releas
 OH_ANAX_MAC_PKG_TAR=${OH_ANAX_MAC_PKG_TAR:-horizon-agent-macos-pkg-x86_64.tar.gz}
 OH_ANAX_DEB_PKG_TAR=${OH_ANAX_DEB_PKG_TAR:-horizon-agent-linux-deb-${ARCH_DEB}.tar.gz}
 OH_ANAX_RPM_PKG_TAR=${OH_ANAX_RPM_PKG_TAR:-horizon-agent-linux-rpm-${ARCH}.tar.gz}
+OH_ANAX_RPM_PKG_X86_TAR=${OH_ANAX_RPM_PKG_X86_TAR:-horizon-agent-linux-rpm-x86_64.tar.gz}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
@@ -526,7 +527,7 @@ pullImages() {
     if [[ $SDO_ENABLE ]]; then
       pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
     else
-      pullDockerImage ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG}
+      echo "pulled FDO image!" #pullDockerImage ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG}
     fi
     pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
 }
@@ -649,7 +650,11 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     chk $? "making directory $CERT_DIR"
     removeKeyAndCert
     local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
-    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:sdo-owner-services"   # add the names the containers use to contact each other
+    if [[ $SDO_ENABLE ]]; then
+      altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:sdo-owner-services"   # add the names the containers use to contact each other
+    else
+      altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"
+    fi
     echo "Creating self-signed certificate for these IP addresses: $altNames"
     # taken from https://medium.com/@groksrc/create-an-openssl-self-signed-san-cert-in-a-single-command-627fd771f25
     openssl req -newkey rsa:4096 -nodes -sha256 -x509 -keyout $CERT_DIR/$CERT_BASE_NAME.key -days 365 -out $CERT_DIR/$CERT_BASE_NAME.crt -subj "/C=US/ST=NY/L=New York/O=allin1@openhorizon.org/CN=$(hostname)" -extensions san -config <(echo '[req]'; echo 'distinguished_name=req'; echo '[san]'; echo "subjectAltName=$altNames")
@@ -1249,8 +1254,13 @@ else   # ubuntu and redhat
         fi
         runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $horizonPkgs
     else # redhat
-        getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
-        tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
+        if isFedora; then
+          getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_X86_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_X86_TAR
+          tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_X86_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_x86_64.rpm
+        else
+          getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
+          tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
+        fi
         chk $? 'extracting pkg tar file'
         echo "Installing the Horizon agent and CLI packages..."
         if [[ -z $OH_NO_AGENT ]]; then
