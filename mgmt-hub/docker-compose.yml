@@ -2,7 +2,8 @@ version: "3"
 
 # Listing the volumes here makes them persistent across container restarts
 volumes:
-  postgresvol:
+  postgresvolexchange:
+  postgresvolfdo:
   mongovol:
   agbotmsgkeyvol:
   ocsdb:
@@ -42,7 +43,7 @@ services:
     depends_on:
       - exchange-api
       - css-api
-      - postgres
+      - postgres-exchange
       - vault
 
   exchange-api:
@@ -66,16 +67,18 @@ services:
       timeout: 5s
       retries: 3
     depends_on:
-      - postgres
+      - postgres-exchange
 
-  postgres:
+  postgres-exchange:
     image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     container_name: postgres
     restart: always
     volumes:
-      - postgresvol:/var/lib/postgresql/data
+      - postgresvol:/var/lib/postgresql/exchange/data
     networks:
       - horizonnet
+    ports:
+      - ${POSTGRES_PORT}:5432
     environment:
       - POSTGRES_DB=${EXCHANGE_DATABASE}
       - POSTGRES_USER=${POSTGRES_USER}
@@ -122,6 +125,71 @@ services:
       - mongovol:/var/edge-sync-service/persist
     healthcheck:
       test: echo show dbs | mongo localhost:${MONGO_PORT}/test --quiet
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  fdo-owner-services:
+    image: ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG}
+    container_name: fdo-owner-services
+    restart: always
+    ports:
+      - ${HZN_LISTEN_IP}:${FDO_OCS_API_PORT}:${FDO_OCS_API_PORT}
+      - ${HZN_LISTEN_IP}:${FDO_RV_PORT}:${FDO_RV_PORT}
+      - ${HZN_LISTEN_IP}:${FDO_OPS_EXTERNAL_PORT}:${FDO_OPS_PORT}
+    networks:
+      - horizonnet
+    volumes:
+      - ocsdb:${FDO_OCS_DB_PATH}
+      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+      - ${CERT_DIR}:/home/fdouser/ocs-api-dir/keys:${VOLUME_MODE}
+    # intentionally omitting HZN_MGMT_HUB_CERT from the environment section, since we use http in this environment
+    environment:
+      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
+      - EXCHANGE_INTERNAL_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
+      - EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES}
+      - EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL}
+      - HZN_FSS_CSSURL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${CSS_PORT}/
+      - HZN_ORG_ID=${EXCHANGE_USER_ORG}
+      - FDO_OWNER_SVC_HOST=${HZN_LISTEN_IP}
+      - FDO_OCS_API_PORT=${FDO_OCS_API_PORT}
+      - FDO_RV_PORT=${FDO_RV_PORT}
+      - FDO_OPS_PORT=${FDO_OPS_PORT}
+      - FDO_OPS_EXTERNAL_PORT=${FDO_OPS_EXTERNAL_PORT}
+      - FDO_OCS_DB_PATH=${FDO_OCS_DB_PATH}
+      - FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM}
+      - FDO_API_CERT_BASE_NAME=${DDO_API_CERT_BASE_NAME}
+      - HZN_MGMT_HUB_CERT=${HZN_MGMT_HUB_CERT}
+      - FDO_DB_PASSWORD=${FDO_DB_PASSWORD}
+      - FDO_DB_USER=${FDO_DB_USER}
+      - FDO_DB_URL=${FDO_DB_URL}
+      - FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST}
+    healthcheck:
+      test: test $$(curl -sS -w %{http_code} -o /dev/null -X POST http://localhost:${SDO_RV_PORT}/mp/113/msg/20) -eq 200
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - css-api
+      - exchange-api
+      - postgres-fdo
+
+  postgres-fdo:
+    image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
+    container_name: postgres-fdo
+    restart: always
+    volumes:
+      - postgresvolfdo:/var/lib/postgresql/fdo/data
+    networks:
+      - horizonnet
+    ports:
+      - ${FDO_DB_PORT}:5432
+    environment:
+      - POSTGRES_DB=${FDO_DATABASE}
+      - POSTGRES_USER=${FDO_DB_USER}
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    healthcheck:
+      test: pg_isready -U ${FDO_DB_USER}
       interval: 15s
       timeout: 5s
       retries: 3
