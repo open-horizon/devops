@@ -12,6 +12,7 @@ volumes:
 networks:
   horizonnet:
     driver: bridge
+    name: hzn_horizonnet
 
 services:
 
@@ -130,13 +131,12 @@ services:
       retries: 3
 
   fdo-owner-services:
-    image: ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG}
+    image: ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
     container_name: fdo-owner-services
     restart: always
     ports:
-      - ${HZN_LISTEN_IP}:${FDO_OCS_API_PORT}:${FDO_OCS_API_PORT}
-      - ${HZN_LISTEN_IP}:${FDO_RV_PORT}:${FDO_RV_PORT}
-      - ${HZN_LISTEN_IP}:${FDO_OPS_EXTERNAL_PORT}:${FDO_OPS_PORT}
+      - ${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}:8042
+      - ${HZN_LISTEN_IP}:${FDO_OWN_COMP_SVC_PORT}:9008
     networks:
       - horizonnet
     volumes:
@@ -145,27 +145,31 @@ services:
       - ${CERT_DIR}:/home/fdouser/ocs-api-dir/keys:${VOLUME_MODE}
     # intentionally omitting HZN_MGMT_HUB_CERT from the environment section, since we use http in this environment
     environment:
-      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
-      - EXCHANGE_INTERNAL_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
-      - EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES}
-      - EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL}
-      - HZN_FSS_CSSURL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${CSS_PORT}/
-      - HZN_ORG_ID=${EXCHANGE_USER_ORG}
-      - FDO_OWNER_SVC_HOST=${HZN_LISTEN_IP}
-      - FDO_OCS_API_PORT=${FDO_OCS_API_PORT}
-      - FDO_RV_PORT=${FDO_RV_PORT}
-      - FDO_OPS_PORT=${FDO_OPS_PORT}
-      - FDO_OPS_EXTERNAL_PORT=${FDO_OPS_EXTERNAL_PORT}
-      - FDO_OCS_DB_PATH=${FDO_OCS_DB_PATH}
-      - FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM}
-      - FDO_API_CERT_BASE_NAME=${DDO_API_CERT_BASE_NAME}
-      - HZN_MGMT_HUB_CERT=${HZN_MGMT_HUB_CERT}
-      - FDO_DB_PASSWORD=${FDO_DB_PASSWORD}
-      - FDO_DB_USER=${FDO_DB_USER}
-      - FDO_DB_URL=${FDO_DB_URL}
-      - FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST}
+      - FDO_DB_PASSWORD=$FDO_OWN_SVC_DB_PASSWORD
+      - FDO_OPS_SVC_HOST=$HZN_LISTEN_IP:$FDO_OWN_SVC_PORT
+      - FDO_DB_USER=$FDO_OWN_SVC_DB_USER
+      - FDO_DB_URL=$FDO_OWN_SVC_DB_URL
+      - HZN_FDO_API_URL=$HZN_TRANSPORT://$HZN_LISTEN_IP:$FDO_OWN_SVC_PORT
+      - FDO_API_PWD=$FDO_OWN_SVC_AUTH
+      - FDO_OCS_DB_PATH=$FDO_OCS_DB_CONTAINER_DIR
+      - FDO_OCS_SVC_PORT=$FDO_OWN_COMP_SVC_PORT
+      - FDO_OCS_SVC_TLS_PORT=$FDO_OWN_COMP_SVC_PORT
+      - FDO_SVC_CERT_PATH=$FDO_OWN_SVC_CERT_PATH
+      - FDO_OPS_PORT=$FDO_OWN_SVC_PORT
+      - FDO_OPS_EXTERNAL_PORT=$FDO_OWN_SVC_PORT
+      - HZN_EXCHANGE_URL=$HZN_EXCHANGE_URL
+      - EXCHANGE_INTERNAL_URL=$EXCHANGE_INTERNAL_URL
+      - EXCHANGE_INTERNAL_CERT=$EXCHANGE_INTERNAL_CERT
+      - EXCHANGE_INTERNAL_RETRIES=$EXCHANGE_INTERNAL_RETRIES
+      - EXCHANGE_INTERNAL_INTERVAL=$EXCHANGE_INTERNAL_INTERVAL
+      - HZN_FSS_CSSURL=$HZN_FSS_CSSURL
+      - HZN_MGMT_HUB_CERT=$HZN_MGMT_HUB_CERT
+      - FDO_GET_PKGS_FROM=$FDO_GET_PKGS_FROM
+      - FDO_GET_CFG_FILE_FROM=$FDO_GET_CFG_FILE_FROM
+      - FDO_RV_VOUCHER_TTL=$FDO_RV_VOUCHER_TTL
+      - VERBOSE=$FDO_OWN_SVC_VERBOSE
     healthcheck:
-      test: test $$(curl -sS -w %{http_code} -o /dev/null -X POST http://localhost:${SDO_RV_PORT}/mp/113/msg/20) -eq 200
+      test: test $$(curl -sS -w %{http_code} -o /dev/null -X GET ${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${FDO_OWN_COMP_SVC_PORT}/api/version) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3
@@ -178,20 +182,21 @@ services:
 
   postgres-fdo:
     image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
-    container_name: postgres-fdo
+    container_name: postgres-fdo-owner-service
     restart: always
     volumes:
       - postgresvolfdo:/var/lib/postgresql/fdo/data
     networks:
       - horizonnet
     ports:
-      - ${FDO_DB_PORT}:5432
+      - ${FDO_OWN_SVC_DB_PORT}:5432
     environment:
-      - POSTGRES_DB=${FDO_DATABASE}
-      - POSTGRES_USER=${FDO_DB_USER}
       - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_DB=${FDO_OWN_SVC_DB}
+      - POSTGRES_PASSWORD=${FDO_OWN_SVC_DB_PASSWORD}
+      - POSTGRES_USER=${FDO_OWN_SVC_DB_USER}
     healthcheck:
-      test: pg_isready -U ${FDO_DB_USER}
+      test: pg_isready -U ${FDO_OWN_SVC_DB_USER}
       interval: 15s
       timeout: 5s
       retries: 3

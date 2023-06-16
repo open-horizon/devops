@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Deploy the management hub services (agbot, exchange, css, sdo, postgre, mongo), the agent, and the CLI on the current host.
+# Deploy the management hub services (agbot, exchange, css, fdo, postgre, mongo), the agent, and the CLI on the current host.
 
 usage() {
     exitCode=${1:-0}
@@ -194,32 +194,33 @@ export EXCHANGE_DATABASE=${EXCHANGE_DATABASE:-exchange}   # the db the exchange 
 export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get 2 different databases created in postgres. The db the agbot uses in the postgres instance
 
 export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
-export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
+export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
 
-export FDO_DATABASE=${FDO_DATABASE:-fdo}
-export FDO_DB_PASSWORD=${FDO_DB_PASSWORD:-fdouser} #$(generateToken 30)
-export FDO_DB_PORT=${FDO_DB_PORT:-5433} # Need a different port than the Exchange
-export FDO_DB_URL=${FDO_DB_URL:-jdbc:postgresql://${HZN_LISTEN_IP}:${FDO_DB_PORT}/${FDO_DATABASE}}
-export FDO_DB_USER=${FDO_DB_USER:-fdouser}
-export FDO_IMAGE_NAME=${FDO_IMAGE_NAME:-openhorizon/fdo-owner-services}
-export FDO_IMAGE_TAG=${FDO_IMAGE_TAG:-latest}
-export FDO_OCS_API_PORT=${FDO_OCS_API_PORT:-9008}
-export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OPS_PORT}}
-export FDO_RV_PORT_HTTP=${FDO_RV_PORT_HTTP:-8040}
-export FDO_RV_PORT_HTTPS=${FDO_RV_PORT_HTTPS:-8041}
-export FDO_OPS_PORT=${FDO_OPS_PORT:-8042}   # the port OPS should listen on *inside* the container
-export FDO_OPS_EXTERNAL_PORT=${FDO_OPS_EXTERNAL_PORT:-$FDO_OPS_PORT}   # the external port the device should use to contact OPS
-export FDO_OCS_DB_PATH=${FDO_OCS_DB_PATH:-/home/fdouser/ocs/config/db}
-export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
+# FDO Owner [Companion] Service
+export EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL:-http://exchange-api:8080}
 export FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file FDO creates (which doesn't include HZN_AGBOT_URL)
+export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
+export FDO_OCS_DB_PATH=${FDO_OCS_DB_PATH:-/home/fdouser/ocs/config/db}
+export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_COMP_SVC_PORT:-9008}
+export FDO_OWN_SVC_AUTH=${FDO_OWN_SVC_AUTH:-apiUser:$(generateToken 30)}
+export FDO_OWN_SVC_DB=${FDO_OWN_SVC_DB:-fdo}
+export FDO_OWN_SVC_DB_PASSWORD=${FDO_OWN_SVC_DB_PASSWORD:-$(generateToken 30)}
+export FDO_OWN_SVC_DB_PORT=${FDO_OWN_SVC_DB_PORT:-5433} # Need a different port than the Exchange
+export FDO_OWN_SVC_DB_URL=${FDO_OWN_SVC_DB_URL:-jdbc:postgresql://postgres-fdo-owner-service:5432/${FDO_OWN_SVC_DB}}
+export FDO_OWN_SVC_DB_USER=${FDO_OWN_SVC_DB_USER:-fdouser}
+export FDO_OWN_SVC_IMAGE_NAME=${FDO_OWN_SVC_IMAGE_NAME:-openhorizon/fdo-owner-services}
+export FDO_OWN_SVC_IMAGE_TAG=${FDO_OWN_SVC_IMAGE_TAG:-testing}
+export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
+export FDO_OWN_SVC_VERBOSE=${FDO_OWN_SVC_VERBOSE:-false}
+export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}}
 
 export SDO_ENABLE=${SDO_ENABLE:-false}  # Enable legacy SDO. FDO Enabled by default.
 export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
-export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-latest}   # or can be set to stable, testing, or a specific version
-export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-$FDO_OCS_API_PORT}
+export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
+export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-$FDO_OWN_COMP_SVC_PORT}
 export SDO_RV_PORT=${SDO_RV_PORT:-$FDO_RV_PORT_HTTP}
-export SDO_OPS_PORT=${SDO_OPS_PORT:-$FDO_OPS_PORT}   # the port OPS should listen on *inside* the container
+export SDO_OPS_PORT=${SDO_OPS_PORT:-$FDO_OWN_SVC_PORT}   # the port OPS should listen on *inside* the container
 export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
 export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
 export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-$FDO_GET_PKGS_FROM}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
@@ -527,7 +528,7 @@ pullImages() {
     if [[ $SDO_ENABLE ]]; then
       pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
     else
-      echo "pulled FDO image!" #pullDockerImage ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG}
+      echo "pulled FDO image!" #pullDockerImage ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
     fi
     pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
 }
@@ -893,7 +894,7 @@ EOFREPO
         fi
    fi
 
-    minVersion=1.21.0
+    minVersion=1.29.2
     if ! isDockerComposeAtLeast $minVersion; then
         if isCmdInstalled docker-compose; then
             fatal 2 "Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
@@ -942,7 +943,7 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
 
     export CSS_LISTENING_TYPE=secure
 
-    export HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)   # for sdo ocs-api to be able to contact the exchange
+    export HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)
 else
     removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
     export CSS_LISTENING_TYPE=unsecure
@@ -1052,7 +1053,7 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
         echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${FDO_IMAGE_NAME}:${FDO_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
     exit
 fi
@@ -1066,7 +1067,7 @@ fi
 if [[ -n "$START" ]]; then
     printf "${CYAN}------- Starting Horizon services...${NC}\n"
     pullImages
-    ${DOCKER_COMPOSE_CMD} up -d --no-build
+    ${DOCKER_COMPOSE_CMD} --profile fdo  up -d --no-build
     chk $? 'starting docker-compose services'
 
     if [[ -z $OH_NO_AGENT ]]; then
@@ -1084,7 +1085,7 @@ fi
 if [[ -n "$UPDATE" ]]; then
     printf "${CYAN}------- Updating management hub containers...${NC}\n"
     pullImages
-    ${DOCKER_COMPOSE_CMD} up -d --no-build
+    ${DOCKER_COMPOSE_CMD} --profile fdo up -d --no-build
     chk $? 'updating docker-compose services'
     exit
 fi
@@ -1116,7 +1117,7 @@ echo "Downloading management hub docker images..."
 pullImages
 
 echo "Starting management hub containers..."
-${DOCKER_COMPOSE_CMD} up -d --no-build
+${DOCKER_COMPOSE_CMD} --profile fdo  up -d --no-build
 chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
@@ -1312,7 +1313,7 @@ cat << EOF > /etc/default/horizon
 HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
-HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$FDO_OCS_API_PORT/api
+HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$FDO_OWN_COMP_SVC_PORT/api
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 ANAX_LOG_LEVEL=$ANAX_LOG_LEVEL
@@ -1360,7 +1361,7 @@ cat << EOF > $TMP_DIR/agent-install.cfg
 HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
-HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$FDO_OCS_API_PORT/api
+HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$FDO_OWN_COMP_SVC_PORT/api
 HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
 EOF
 
@@ -1401,29 +1402,43 @@ fi
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
-echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB, vault"
-echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
+echo "  1. Started Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, Postgres DB, Postgres DB FDO, Vault"
+echo "  2. Created exchange resources: system organization ($EXCHANGE_SYSTEM_ORG) admin user, user organization ($EXCHANGE_USER_ORG) and admin user, and agbot"
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "    Automatically generated these passwords/tokens:"
     if [[ -n $EXCHANGE_ROOT_PW_GENERATED ]]; then
-        echo "      EXCHANGE_ROOT_PW=$EXCHANGE_ROOT_PW"
+        echo "      export EXCHANGE_ROOT_PW=$EXCHANGE_ROOT_PW"
+        echo "      export HZN_ORG_ID=root"
+        echo "      export HZN_EXCHANGE_USER_AUTH=root:$EXCHANGE_ROOT_PW"
     fi
     if [[ -n $EXCHANGE_HUB_ADMIN_PW_GENERATED ]]; then
-        echo "      EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
+        echo "      export EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
+        echo "      export HZN_ORG_ID=root"
+        echo "      export HZN_EXCHANGE_USER_AUTH=hubadmin:$EXCHANGE_HUB_ADMIN_PW"
     fi
     if [[ -n $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED ]]; then
-        echo "      EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
+        echo "      export EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
+        echo "      export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_SYSTEM_ADMIN_PW"
     fi
     if [[ -n $AGBOT_TOKEN_GENERATED ]]; then
-        echo "      AGBOT_TOKEN=$AGBOT_TOKEN"
+        echo "      export AGBOT_TOKEN=$AGBOT_TOKEN"
+        echo "      export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=$AGBOT_ID:$AGBOT_TOKEN"
     fi
     if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
-        echo "      EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
+        echo "      export EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
+        echo "      export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_EXCHANGE_USER_ADMIN_PW"
     fi
     if [[ -n $HZN_DEVICE_TOKEN_GENERATED ]]; then
-        echo "      HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
+        echo "      export HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
+        echo "      export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN"
     fi
+
     echo "    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+    echo "    Authentication to the Exchange is in the format <organization>/<identity>:<password> or \$HZN_ORG_ID/\$HZN_EXCHANGE_USER_AUTH."
 fi
 if [[ -z $OH_NO_AGENT ]]; then
     echo "  3. Installed and configured the Horizon agent and CLI (hzn)"
@@ -1442,9 +1457,14 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
 fi
 echo "  $nextNum. Created a vault instance: $HZN_VAULT_URL/ui/vault/auth?with=token"
 echo "    Automatically generated this key/token:"
-echo "      VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
-echo "      VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
+echo "      export VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
+echo "      export VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
 echo "    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
+nextNum=$((nextNum+1))
+echo "  $nextNum. Created a FDO Owner Service instance."
+echo "    Run test-fdo.sh to simulate the transfer of a device and automatic workload provisioning."
+echo "    FDO Owner Service on port $FDO_OWN_SVC_PORT API credentials:"
+echo "     export FDO_OWN_SVC_AUTH=$FDO_OWN_SVC_AUTH"
 nextNum=$((nextNum+1))
 echo "  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
