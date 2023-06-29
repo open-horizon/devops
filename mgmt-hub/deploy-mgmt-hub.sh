@@ -198,6 +198,8 @@ export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or 
 export MONGO_PORT=${MONGO_PORT:-27017}
 
 # FDO Owner [Companion] Service
+export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
+export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
 export EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL:-http://exchange-api:8080}
 export FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file FDO creates (which doesn't include HZN_AGBOT_URL)
 export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
@@ -215,20 +217,10 @@ export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
 export FDO_OWN_SVC_VERBOSE=${FDO_OWN_SVC_VERBOSE:-false}
 export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}}
 
-export SDO_ENABLE=${SDO_ENABLE:-false}  # Enable legacy SDO. FDO Enabled by default.
 export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
-export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-$FDO_OWN_COMP_SVC_PORT}
-export SDO_RV_PORT=${SDO_RV_PORT:-$FDO_RV_PORT_HTTP}
-export SDO_OPS_PORT=${SDO_OPS_PORT:-$FDO_OWN_SVC_PORT}   # the port OPS should listen on *inside* the container
-export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
-export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
-export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-$FDO_GET_PKGS_FROM}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
-export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-$FDO_GET_CFG_FILE_FROM:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
-export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
-export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
-# Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 
+# Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 export VAULT_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
 export VAULT_PORT=${VAULT_PORT:-8200}
 export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${VAULT_PORT}}
@@ -281,7 +273,6 @@ DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
 IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'   # use it like: if [[ $host =~ $IP_REGEX ]]
 export CERT_DIR=/etc/horizon/keys
 export CERT_BASE_NAME=horizonMgmtHub
-export SDO_API_CERT_BASE_NAME=$CERT_BASE_NAME
 EXCHANGE_TRUST_STORE_FILE=truststore.p12
 # colors for shell ascii output. Must use printf (and add newline) because echo -e is not supported on macos
 RED='\e[0;31m'
@@ -525,11 +516,7 @@ pullImages() {
     pullDockerImage ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
     pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
-    if [[ $SDO_ENABLE ]]; then
-      pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
-    else
-      echo "pulled FDO image!" #pullDockerImage ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
-    fi
+    pullDockerImage ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
     pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
 }
 
@@ -651,11 +638,8 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     chk $? "making directory $CERT_DIR"
     removeKeyAndCert
     local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
-    if [[ $SDO_ENABLE ]]; then
-      altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:sdo-owner-services"   # add the names the containers use to contact each other
-    else
-      altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"
-    fi
+    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
+
     echo "Creating self-signed certificate for these IP addresses: $altNames"
     # taken from https://medium.com/@groksrc/create-an-openssl-self-signed-san-cert-in-a-single-command-627fd771f25
     openssl req -newkey rsa:4096 -nodes -sha256 -x509 -keyout $CERT_DIR/$CERT_BASE_NAME.key -days 365 -out $CERT_DIR/$CERT_BASE_NAME.crt -subj "/C=US/ST=NY/L=New York/O=allin1@openhorizon.org/CN=$(hostname)" -extensions san -config <(echo '[req]'; echo 'distinguished_name=req'; echo '[san]'; echo "subjectAltName=$altNames")
@@ -972,13 +956,8 @@ fi
 # also leave a copy of test-mgmt-hub.sh and test-sdo.sh so they can run those afterward, if they want
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-mgmt-hub.sh test-mgmt-hub.sh
 chmod +x test-mgmt-hub.sh
-if [[ $SDO_ENABLE ]]; then
-  getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
-  chmod +x test-sdo.sh
-else
-  getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh test-fdo.sh
-  chmod +x test-fdo.sh
-fi
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh test-fdo.sh
+chmod +x test-fdo.sh
 
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
@@ -1067,7 +1046,7 @@ fi
 if [[ -n "$START" ]]; then
     printf "${CYAN}------- Starting Horizon services...${NC}\n"
     pullImages
-    ${DOCKER_COMPOSE_CMD} --profile fdo  up -d --no-build
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'starting docker-compose services'
 
     if [[ -z $OH_NO_AGENT ]]; then
@@ -1085,7 +1064,7 @@ fi
 if [[ -n "$UPDATE" ]]; then
     printf "${CYAN}------- Updating management hub containers...${NC}\n"
     pullImages
-    ${DOCKER_COMPOSE_CMD} --profile fdo up -d --no-build
+    ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'updating docker-compose services'
     exit
 fi
@@ -1117,7 +1096,7 @@ echo "Downloading management hub docker images..."
 pullImages
 
 echo "Starting management hub containers..."
-${DOCKER_COMPOSE_CMD} --profile fdo  up -d --no-build
+${DOCKER_COMPOSE_CMD} up -d --no-build
 chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
@@ -1314,7 +1293,6 @@ HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
 HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$FDO_OWN_COMP_SVC_PORT/api
-HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 ANAX_LOG_LEVEL=$ANAX_LOG_LEVEL
 EOF
@@ -1362,7 +1340,6 @@ HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
 HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$FDO_OWN_COMP_SVC_PORT/api
-HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
 EOF
 
 if [[ $HZN_TRANSPORT == 'https' ]]; then
