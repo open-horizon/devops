@@ -173,8 +173,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-    profiles:
-      - fdo
     depends_on:
       - css-api
       - exchange-api
@@ -200,49 +198,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-    profiles:
-      - fdo
-
-  sdo-owner-services:
-    image: ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
-    container_name: sdo-owner-services
-    restart: always
-    ports:
-      - ${HZN_LISTEN_IP}:${SDO_OCS_API_PORT}:${SDO_OCS_API_PORT}
-      - ${HZN_LISTEN_IP}:${SDO_RV_PORT}:${SDO_RV_PORT}
-      - ${HZN_LISTEN_IP}:${SDO_OPS_EXTERNAL_PORT}:${SDO_OPS_PORT}
-    networks:
-      - horizonnet
-    volumes:
-      - ocsdb:${SDO_OCS_DB_PATH}
-      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
-      - ${CERT_DIR}:/home/sdouser/ocs-api-dir/keys:${VOLUME_MODE}
-    # intentionally omitting HZN_MGMT_HUB_CERT from the environment section, since we use http in this environment
-    environment:
-      - HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${EXCHANGE_PORT}/v1
-      - EXCHANGE_INTERNAL_URL=${HZN_TRANSPORT}://exchange-api:8080/v1
-      - EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES}
-      - EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL}
-      - HZN_FSS_CSSURL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${CSS_PORT}/
-      - HZN_ORG_ID=${EXCHANGE_USER_ORG}
-      - SDO_OWNER_SVC_HOST=${HZN_LISTEN_IP}
-      - SDO_OCS_API_PORT=${SDO_OCS_API_PORT}
-      - SDO_RV_PORT=${SDO_RV_PORT}
-      - SDO_OPS_PORT=${SDO_OPS_PORT}
-      - SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT}
-      - SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH}
-      - SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM}
-      - SDO_API_CERT_BASE_NAME=${SDO_API_CERT_BASE_NAME}
-      - HZN_MGMT_HUB_CERT=${HZN_MGMT_HUB_CERT}
-    healthcheck:
-      test: test $$(curl -sS -w %{http_code} -o /dev/null -X POST http://localhost:${SDO_RV_PORT}/mp/113/msg/20) -eq 200
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    profiles:
-      - sdo
-    depends_on:
-      - exchange-api
 
   vault:
     image: ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
