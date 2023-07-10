@@ -146,6 +146,7 @@ export EXCHANGE_SYSTEM_ORG=${EXCHANGE_SYSTEM_ORG:-IBM}   # the name of the syste
 export EXCHANGE_USER_ORG=${EXCHANGE_USER_ORG:-myorg}   # the name of the org which you will use to create nodes, service, patterns, and deployment policies
 export EXCHANGE_WAIT_ITERATIONS=${EXCHANGE_WAIT_ITERATIONS:-30}
 export EXCHANGE_WAIT_INTERVAL=${EXCHANGE_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
+export HZN_EXCHANGE_URL=${HZN_EXCHANGE_URL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1}
 
 export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-openhorizon/${ARCH}_agbot}
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -185,6 +186,7 @@ export CSS_LOG_ROOT_PATH=${CSS_LOG_ROOT_PATH:-/var/edge-sync-service/log}
 export CSS_TRACE_LEVEL=${CSS_TRACE_LEVEL:-INFO}
 export CSS_TRACE_ROOT_PATH=${CSS_TRACE_ROOT_PATH:-/var/edge-sync-service/trace}
 export CSS_MONGO_AUTH_DB_NAME=${CSS_MONGO_AUTH_DB_NAME:-admin}
+export HZN_FSS_CSSURL=${HZN_FSS_CSSURL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$CSS_PORT}
 
 export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
 export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-13}   # or can be set to stable or a specific version
@@ -200,10 +202,10 @@ export MONGO_PORT=${MONGO_PORT:-27017}
 # FDO Owner [Companion] Service
 export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
 export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
-export EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL:-http://exchange-api:8080}
+export EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL:-http://exchange-api:8080/v1}
 export FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file FDO creates (which doesn't include HZN_AGBOT_URL)
 export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
-export FDO_OCS_DB_PATH=${FDO_OCS_DB_PATH:-/home/fdouser/ocs/config/db}
+export FDO_OCS_DB_CONTAINER_DIR=${FDO_OCS_DB_CONTAINER_DIR:-/home/fdouser/ocs/config/db}
 export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_COMP_SVC_PORT:-9008}
 export FDO_OWN_SVC_AUTH=${FDO_OWN_SVC_AUTH:-apiUser:$(generateToken 30)}
 export FDO_OWN_SVC_DB=${FDO_OWN_SVC_DB:-fdo}
@@ -216,6 +218,7 @@ export FDO_OWN_SVC_IMAGE_TAG=${FDO_OWN_SVC_IMAGE_TAG:-testing}
 export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
 export FDO_OWN_SVC_VERBOSE=${FDO_OWN_SVC_VERBOSE:-false}
 export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}}
+export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.5}
 
 export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
@@ -651,6 +654,35 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME.crt /etc/ssl/certs
 }
 
+export CERT_BASE_NAME_FDO="${CERT_BASE_NAME}FDO"
+# For FDO, when the All-in-1 is using http. Use standard method when using https.
+createKeyAndCertFDO() {   # create in directory $CERT_DIR a certificate named: $CERT_BASE_NAME_FDO.crt
+    # Check if the cert is already correct from a previous run, so we don't keep changing it
+    if ! isCmdInstalled openssl; then
+        fatal 2 "specified HZN_TRANSPORT=$HZN_TRANSPORT, but command openssl is not installed to create the self-signed certificate"
+    fi
+    if [[ -f "$CERT_DIR/$CERT_BASE_NAME_FDO.crt" ]]; then
+        echo "Certificate $CERT_DIR/$CERT_BASE_NAME_FDO.crt already exists, so not receating it"
+        return   # no need to recreate the cert
+    fi
+
+    # Create the certificate that FDO needs
+    mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
+    chk $? "making directory $CERT_DIR"
+    local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
+
+    echo "Creating self-signed certificate for these IP addresses: $altNames"
+    # taken from https://medium.com/@groksrc/create-an-openssl-self-signed-san-cert-in-a-single-command-627fd771f25
+    # In this case we do not need the key, just the certificate.
+    openssl req -newkey rsa:4096 -nodes -sha256 -x509 -days 365 -out $CERT_DIR/$CERT_BASE_NAME_FDO.crt -subj "/C=US/ST=NY/L=New York/O=allin1@openhorizon.org/CN=$(hostname)" -extensions san -config <(echo '[req]'; echo 'distinguished_name=req'; echo '[san]'; echo "subjectAltName=$altNames")
+    chk $? "creating certificate"
+
+    # Do not need to create the truststore for the Exchange.
+
+    #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME_FDO.crt /etc/ssl/certs
+}
+
 # ----- Vault functions -----
 vaultAuthMethodCheck() {
     curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME/$VAULT_AUTH_PLUGIN_EXCHANGE/tune $* 2>$VAULT_ERROR_FILE
@@ -936,8 +968,13 @@ else
     export EXCHANGE_HTTPS_PORT=null
     export EXCHANGE_TRUST_STORE_PATH=null
 
-    export HZN_MGMT_HUB_CERT=''   # needs to be in the environment or docker-compose will complain
+    # For FDO only.
+    createKeyAndCertFDO
+    export HZN_MGMT_HUB_CERT=$(cat "$CERT_DIR/$CERT_BASE_NAME_FDO.crt" | base64)   # needs to be in the environment or docker-compose will complain
 fi
+
+# For FDO.
+export EXCHANGE_INTERNAL_CERT=${HZN_MGMT_HUB_CERT:-N/A}
 
 # Download and process templates from open-horizon/devops
 printf "${CYAN}------- Downloading template files...${NC}\n"
@@ -1101,7 +1138,6 @@ chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
-HZN_EXCHANGE_URL=${HZN_TRANSPORT}://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
 exchangeGet() {
     curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
@@ -1380,7 +1416,7 @@ fi
 # Summarize
 echo -e "\n----------- Summary of what was done:"
 echo "  1. Started Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, Postgres DB, Postgres DB FDO, Vault"
-echo "  2. Created exchange resources: system organization ($EXCHANGE_SYSTEM_ORG) admin user, user organization ($EXCHANGE_USER_ORG) and admin user, and agbot"
+echo "  2. Created exchange resources: system organization (${EXCHANGE_SYSTEM_ORG}) admin user, user organization (${EXCHANGE_USER_ORG}) and admin user, and agbot"
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "    Automatically generated these passwords/tokens:"
     if [[ -n $EXCHANGE_ROOT_PW_GENERATED ]]; then
@@ -1389,32 +1425,32 @@ if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-
         echo "      export HZN_EXCHANGE_USER_AUTH=root:$EXCHANGE_ROOT_PW"
     fi
     if [[ -n $EXCHANGE_HUB_ADMIN_PW_GENERATED ]]; then
-        echo "      export EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
+        echo -e "\n      export EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
         echo "      export HZN_ORG_ID=root"
         echo "      export HZN_EXCHANGE_USER_AUTH=hubadmin:$EXCHANGE_HUB_ADMIN_PW"
     fi
     if [[ -n $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED ]]; then
-        echo "      export EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
+        echo -e "\n      export EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
         echo "      export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG"
         echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_SYSTEM_ADMIN_PW"
     fi
     if [[ -n $AGBOT_TOKEN_GENERATED ]]; then
-        echo "      export AGBOT_TOKEN=$AGBOT_TOKEN"
+        echo -e "\n      export AGBOT_TOKEN=$AGBOT_TOKEN"
         echo "      export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG"
         echo "      export HZN_EXCHANGE_USER_AUTH=$AGBOT_ID:$AGBOT_TOKEN"
     fi
     if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
-        echo "      export EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
+        echo -e "\n      export EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
         echo "      export HZN_ORG_ID=$EXCHANGE_USER_ORG"
-        echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_EXCHANGE_USER_ADMIN_PW"
+        echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_USER_ADMIN_PW"
     fi
     if [[ -n $HZN_DEVICE_TOKEN_GENERATED ]]; then
-        echo "      export HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
+        echo -e "\n      export HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
         echo "      export HZN_ORG_ID=$EXCHANGE_USER_ORG"
         echo "      export HZN_EXCHANGE_USER_AUTH=$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN"
     fi
 
-    echo "    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+    echo -e "\n    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
     echo "    Authentication to the Exchange is in the format <organization>/<identity>:<password> or \$HZN_ORG_ID/\$HZN_EXCHANGE_USER_AUTH."
 fi
 if [[ -z $OH_NO_AGENT ]]; then
@@ -1436,14 +1472,14 @@ echo "  $nextNum. Created a vault instance: $HZN_VAULT_URL/ui/vault/auth?with=to
 echo "    Automatically generated this key/token:"
 echo "      export VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
 echo "      export VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
-echo "    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
+echo -e "\n    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
 nextNum=$((nextNum+1))
 echo "  $nextNum. Created a FDO Owner Service instance."
 echo "    Run test-fdo.sh to simulate the transfer of a device and automatic workload provisioning."
 echo "    FDO Owner Service on port $FDO_OWN_SVC_PORT API credentials:"
-echo "     export FDO_OWN_SVC_AUTH=$FDO_OWN_SVC_AUTH"
+echo "      export FDO_OWN_SVC_AUTH=$FDO_OWN_SVC_AUTH"
 nextNum=$((nextNum+1))
-echo "  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
+echo -e "\n  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
 fi
@@ -1455,5 +1491,5 @@ else
     userAdminPw='$EXCHANGE_USER_ADMIN_PW'   # if they specified a pw, do not reveal it
 fi
 echo "Before running the commands in the What To Do Next section, copy/paste/run these commands in your terminal:"
-echo " export HZN_ORG_ID=$EXCHANGE_USER_ORG"
-echo " export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"
+echo "  export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+echo "  export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"

@@ -62,7 +62,7 @@ fi
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }
 
 # These environment variables can be overridden
-export FDO_MFG_SVC_AUTH=${FDO_MFG_SVC_AUTH:-apiUser:$(generateToken 15)}
+export FDO_MFG_SVC_AUTH=${FDO_MFG_SVC_AUTH:-apiUser:$(generateToken 30)}
 export FDO_MFG_SVC_PORT=${FDO_MFG_SVC_PORT:-8039}
 export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_SVC_PORT:-9008}
 export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
@@ -70,6 +70,7 @@ export FDO_SAMPLE_MFG_KEEP_SVCS=${FDO_SAMPLE_MFG_KEEP_SVCS:-true}
 FDO_SUPPORT_RELEASE=${FDO_SUPPORT_RELEASE:-https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-mfg/start-mfg.sh}
 #FDO_SUPPORT_RELEASE=${FDO_SUPPORT_RELEASE:-https://github.com/open-horizon/FDO-support/releases/latest/download}
 FDO_RV_PORT=${FDO_RV_PORT:-80}
+FDO_AGREEMENT_WAIT=${FDO_AGREEMENT_WAIT:-30}
 FDO_TO0_WAIT=${FDO_TO0_WAIT:-10}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-38}
@@ -244,7 +245,9 @@ httpCode=$(curl -sS -w "%{http_code}" -o /dev/null "$FDO_RV_URL:$FDO_RV_PORT/hea
 chkHttp $? "$httpCode" 200 "pinging rendezvous server"
 
 echo -e "\n======================== Configuring this host as a simulated FDO device..."
-#getUrlFile $FDO_SUPPORT_REPO/sample-mfg/simulate-mfg.sh simulate-mfg.sh
+echo -e "  FDO Manufacturer Service authentication credentials:"
+echo -e "    export FDO_MFG_SVC_AUTH=${FDO_MFG_SVC_AUTH}"
+echo -e ""
 getUrlFile "$FDO_SUPPORT_RELEASE" start-mfg.sh
 chmod +x start-mfg.sh
 chk $? 'making simulate-mfg.sh executable'
@@ -273,5 +276,6 @@ java -jar device.jar
 chk $? 'simulating booting the device'
 
 echo -e "\n======================== Checking for an agreement..."
+sleep "$FDO_AGREEMENT_WAIT"
 hzn agreement list
 chk $? 'agreement check'
