@@ -2,11 +2,11 @@ version: "3"
 
 # Listing the volumes here makes them persistent across container restarts
 volumes:
-  postgresvolexchange:
+  postgres:
   postgresvolfdo:
   mongovol:
   agbotmsgkeyvol:
-  ocsdb:
+  fdo-ocs-db:
   vaultvol:
 
 networks:
@@ -75,7 +75,7 @@ services:
     container_name: postgres
     restart: always
     volumes:
-      - postgresvol:/var/lib/postgresql/exchange/data
+      - postgres:/var/lib/postgresql/data
     networks:
       - horizonnet
     ports:
@@ -135,39 +135,36 @@ services:
     container_name: fdo-owner-services
     restart: always
     ports:
-      - ${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}:8042
-      - ${HZN_LISTEN_IP}:${FDO_OWN_COMP_SVC_PORT}:9008
+      - ${FDO_OWN_SVC_PORT}:8042
+      - ${FDO_OWN_COMP_SVC_PORT}:9008
     networks:
       - horizonnet
     volumes:
-      - ocsdb:${FDO_OCS_DB_PATH}
-      # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
-      - ${CERT_DIR}:/home/fdouser/ocs-api-dir/keys:${VOLUME_MODE}
-    # intentionally omitting HZN_MGMT_HUB_CERT from the environment section, since we use http in this environment
+      - type: volume
+        source: fdo-ocs-db
+        target: ${FDO_OCS_DB_CONTAINER_DIR}
     environment:
-      - FDO_DB_PASSWORD=$FDO_OWN_SVC_DB_PASSWORD
-      - FDO_OPS_SVC_HOST=$HZN_LISTEN_IP:$FDO_OWN_SVC_PORT
-      - FDO_DB_USER=$FDO_OWN_SVC_DB_USER
-      - FDO_DB_URL=$FDO_OWN_SVC_DB_URL
-      - HZN_FDO_API_URL=$HZN_TRANSPORT://$HZN_LISTEN_IP:$FDO_OWN_SVC_PORT
-      - FDO_API_PWD=$FDO_OWN_SVC_AUTH
-      - FDO_OCS_DB_PATH=$FDO_OCS_DB_CONTAINER_DIR
-      - FDO_OCS_SVC_PORT=$FDO_OWN_COMP_SVC_PORT
-      - FDO_OCS_SVC_TLS_PORT=$FDO_OWN_COMP_SVC_PORT
-      - FDO_SVC_CERT_PATH=$FDO_OWN_SVC_CERT_PATH
-      - FDO_OPS_PORT=$FDO_OWN_SVC_PORT
-      - FDO_OPS_EXTERNAL_PORT=$FDO_OWN_SVC_PORT
-      - HZN_EXCHANGE_URL=$HZN_EXCHANGE_URL
-      - EXCHANGE_INTERNAL_URL=$EXCHANGE_INTERNAL_URL
-      - EXCHANGE_INTERNAL_CERT=$EXCHANGE_INTERNAL_CERT
-      - EXCHANGE_INTERNAL_RETRIES=$EXCHANGE_INTERNAL_RETRIES
-      - EXCHANGE_INTERNAL_INTERVAL=$EXCHANGE_INTERNAL_INTERVAL
-      - HZN_FSS_CSSURL=$HZN_FSS_CSSURL
-      - HZN_MGMT_HUB_CERT=$HZN_MGMT_HUB_CERT
-      - FDO_GET_PKGS_FROM=$FDO_GET_PKGS_FROM
-      - FDO_GET_CFG_FILE_FROM=$FDO_GET_CFG_FILE_FROM
-      - FDO_RV_VOUCHER_TTL=$FDO_RV_VOUCHER_TTL
-      - VERBOSE=$FDO_OWN_SVC_VERBOSE
+      - FDO_DB_PASSWORD=${FDO_OWN_SVC_DB_PASSWORD}
+      - FDO_OPS_SVC_HOST=${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}
+      - FDO_DB_USER=${FDO_OWN_SVC_DB_USER}
+      - FDO_DB_URL=${FDO_OWN_SVC_DB_URL}
+      - HZN_FDO_API_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}
+      - FDO_API_PWD=${FDO_OWN_SVC_AUTH}
+      - FDO_OCS_DB_PATH=${FDO_OCS_DB_CONTAINER_DIR}
+      - FDO_OCS_SVC_PORT=${FDO_OWN_COMP_SVC_PORT}
+      - FDO_OCS_SVC_TLS_PORT=${FDO_OWN_COMP_SVC_PORT}
+      - FDO_OPS_PORT=${FDO_OWN_SVC_PORT}
+      - FDO_OPS_EXTERNAL_PORT=${FDO_OWN_SVC_PORT}
+      - HZN_EXCHANGE_URL=${HZN_EXCHANGE_URL}
+      - EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL}
+      - EXCHANGE_INTERNAL_CERT=${EXCHANGE_INTERNAL_CERT}
+      - EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES}
+      - EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL}
+      - HZN_FSS_CSSURL=${HZN_FSS_CSSURL}
+      - HZN_MGMT_HUB_CERT=${HZN_MGMT_HUB_CERT}
+      - FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM}
+      - FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM}
+      - VERBOSE=${FDO_OWN_SVC_VERBOSE}
     healthcheck:
       test: test $$(curl -sS -w %{http_code} -o /dev/null -X GET ${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${FDO_OWN_COMP_SVC_PORT}/api/version) -eq 200
       interval: 15s
@@ -183,7 +180,7 @@ services:
     container_name: postgres-fdo-owner-service
     restart: always
     volumes:
-      - postgresvolfdo:/var/lib/postgresql/fdo/data
+      - postgresvolfdo:/var/lib/postgresql/data
     networks:
       - horizonnet
     ports:
