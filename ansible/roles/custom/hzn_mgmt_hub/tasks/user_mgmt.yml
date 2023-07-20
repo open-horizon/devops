@@ -1,2 +1,50 @@
-- name: Gather user information
-  
+
+# Load the facts from the active installation. We need this information to control users and orgs.
+# It should be coming from an ansible vault, however we can try to load it from the remote system.
+# - name: Try to load installation facts
+#   ansible.builtin.include_vars:
+#     remote_src: true
+#     file: mgmt_hub_configuration.yml
+#     name: hzn_mgmt_hub
+#   when: install_config.skipped
+
+- name: Move config
+  ansible.builtin.set_fact:
+    hzn_mgmt_hub: '{{ install_config.hzn_mgmt_hub }}'
+  when: not install_config.skipped
+
+- name: Gather present configuration
+  get_exchange_config:
+    root_credentials: 'root/root:{{ hzn_mgmt_hub.exchange.secrets.root_pw }}'
+    config: '{{ exchange_config }}'
+  register: present_configuration
+
+- name: Print present config
+  debug:
+    msg: '{{ present_configuration }}'
+
+- name: Delete users
+  include_tasks: del_one_user.yml
+  loop: '{{ present_configuration.delta.remove_users }}'
+  loop_control:
+    loop_var: user
+
+- name: Delete orgs
+  include_tasks: del_one_org.yml
+  loop: '{{ present_configuration.delta.remove_orgs }}'
+  loop_control:
+    loop_var: org
+
+- name: Add org
+  include_tasks: add_one_org.yml
+  loop: '{{ present_configuration.delta.add_orgs }}'
+  loop_control:
+    loop_var: org
+
+- name: Add users to existing orgs
+  include_tasks: add_one_user.yml
+  loop: '{{ present_configuration.delta.add_users }}'
+  vars:
+    org: '{{ user.org }}'
+  loop_control:
+    loop_var: user

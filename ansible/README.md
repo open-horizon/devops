@@ -8,23 +8,16 @@ it will stand up an OpenHorizon Management Hub deployment with little to no user
 Introduction and Rationale
 ---------
 
-What is Ansible? Why use it?
-
-To start off, Ansible is an automation tool built for use in IT environments.
+Ansible is an automation tool built for use in IT environments.
 It takes in variables and a "playbook", and using these, it performs the tasks on the
 target hosts as needed. Variables customize the tasks, and the playbook defines a
 sequence of tasks to be run on a host. Individually, tasks look much like 
 a function call, where they take values as input and can emit a value as output.
 
-RedHat maintains Ansible, and the project receives support and extension modules 
-from several prominent organizations in the cloud and automation industries.
-
 Ansible is a good alternative to other installation methods because it enables the
 integration of third party collections and roles into your installation codebase.
 This enables you, the developer, to offload the Docker automation in your scripting
-off to the Docker team themselves. Many Ansible roles and collections available are
-cross-platform, which means a single playbook will work fine as written on many different
-distros. In some cases, this includes compatibility between Linux and Windows systems.
+off to a community maintained project.
 
 Ansible roles can be found on the [Ansible Galaxy](https://galaxy.ansible.com/) website.
 Details of how to write Ansible playbooks and roles can be found on the
@@ -58,18 +51,30 @@ Define custom variables as needed in a YAML file, call it `vars.yml`.
 For reference, see the default vars file at `roles/custom/hzn_mgmt_hub/vars/main.yml` to see the structure of vars that you can set.
  - Note: You do not need to define every variable. Ones you do not set will be initialized using the default var file.
 
+More details about the role variables can be found in the role's README file.
+
 You may also define these variables in the environment.
-For example, to set the exchange root password, the environment variable `EXCHANGE_ROOT_PW` sets the Ansible variable `exchange.root_pw`.
- - Note: **If you provide variables on the command line or in a file, they will take precedence over the environment.**
+For example, to set the exchange root password, the environment variable `EXCHANGE_ROOT_PW` sets the Ansible variable `hzn_mgmt_hub.exchange.root_pw`.
 
 ### Running the Playbook
 
-To run the Ansible playbook, simply run:
- - `make`
-
+This repository contains a makefile to simplify executing ansible.
 The makefile will handle the invocation of the playbook for you, as well as installing external dependencies.
+
+#### `make install`
+
+This will run the role in the installation mode, which installs a new instance of the management hub on the target system.
+
+#### `make uninstall`
+
+This will uninstall the management hub from the target system.
+
+#### `make sync`
+
+This will sync settings with whatever variables you pass into Ansible.
+It is required that the management be installed prior to running the playbook in this mode.
 
 ### After Running
 
 Ansible will package a file containing the generated variables encrypted in a vault after running.
-The passkey to unlock the vault will be printed to the terminal. 
+The passkey to unlock the vault will be printed to the terminal.

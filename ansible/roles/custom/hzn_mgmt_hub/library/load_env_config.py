@@ -1,5 +1,12 @@
+import os
+from typing import List, Dict, Optional, Any
+from enum import unique, Enum
 
-DOCUMENTATION = r'''
+import dotenv
+
+from ansible.module_utils.basic import AnsibleModule
+
+DOCUMENTATION = r"""
 ---
 module: load_from_env
 
@@ -13,33 +20,16 @@ description: |-
 author:
     - Adam Hassick (@loudonlune)
 
-'''
+"""
 
 MODULE_ARGUMENTS = {
     # Facts from the initial (setup) module.
-    'ansible_facts': {
-        'type': dict,
-        'required': True
-    },
+    "ansible_facts": {"type": dict, "required": True},
     # The management hub config.
-    'mgmt_hub': {
-        'type': dict,
-        'required': True
-    },
-    'env_file': {
-        'type': str,
-        'required': False
-    }
+    "mgmt_hub": {"type": dict, "required": True},
+    "env_file": {"type": str, "required": False},
 }
 
-import os
-import random
-import string
-from typing import List, Dict, Union, Optional, Callable, Any
-
-import dotenv
-
-from ansible.module_utils.basic import AnsibleModule
 
 def key_to_env(key: str, prefix: Optional[str]) -> str:
     if prefix:
@@ -48,26 +38,88 @@ def key_to_env(key: str, prefix: Optional[str]) -> str:
         return key.upper()
 
 
-PASSWD_DOMAIN = string.ascii_letters + string.digits
+@unique
+class ConfFieldType(Enum):
+    secrets = "secrets"
+    config = "config"
+    net = "net"
 
-MkdefaultFn = Optional[Callable[[ Dict ], str]]
+    def get_kwords(self):
+        """
+        Get keywords associated with the current variant.
+        """
+        if self == ConfFieldType.secrets:
+            return ["pw", "pass", "password", "key", "auth", "token"]
+        if self == ConfFieldType.net:
+            return ["port", "ip", "hostname", "host"]
+
+        return []
+
+    @classmethod
+    def get_field_type(cls, tokens: List[str]):
+        """
+        Resolve, for a tokenized ekey, which field type it should fall under.
+        Returns a variant of this enum.
+        """
+        # For each variant
+        for variant in cls:
+            # For each keyword
+            for kw in variant.get_kwords():
+                # Check if it appears in the tokens.
+                if kw in tokens:
+                    return variant
+
+        # The config field type is the default
+        return ConfFieldType.config
+
+
+class ConfPath(object):
+    ACCEPT_BASE_KEYS: List[str] = [
+        "anax_log_level",
+        "compose_project_name",
+        "hc_docker_tag",
+    ]
+    field_type: ConfFieldType
+    key: str
+    component: Optional[str] = None
+
+    def should_ignore(self) -> bool:
+        return not (
+            self.component
+            or self.field_type != ConfFieldType.config
+            or self.key in ConfPath.ACCEPT_BASE_KEYS
+        )
+
+    def __init__(self, ekey: str):
+        # Tokenize the environment key.
+        tokens = ekey.lower().split("_")
+
+        component_token = tokens[0]
+
+        for component in ConfigLoader.COMPONENTS:
+            if component_token == component:
+                self.component = component
+
+        if self.component:
+            tokens = tokens[1:]
+
+        self.field_type = ConfFieldType.get_field_type(tokens)
+        self.key = "_".join(tokens)
+
 
 class ConfigLoader(object):
-    # Static fields.
-    SECRET_FIELD: str = 'secrets'
-    DOCKER_FIELD: str = 'docker'
-    CONFIG_FIELD: str = 'config'
     COMPONENTS: List[str] = [
-        'agbot',
-        'agbot2',
-        'agent',
-        'css',
-        'exchange',
-        'hzn',
-        'mongo',
-        'postgres',
-        'sdo',
-        'vault'
+        "agbot",
+        "agbot2",
+        "agent",
+        "css",
+        "exchange",
+        "hzn",
+        "mongo",
+        "postgres",
+        "fdo",
+        "oh",
+        "vault",
     ]
 
     # Assignable fields.
@@ -76,45 +128,51 @@ class ConfigLoader(object):
     arch: str
     changed: bool
 
-    # Generate a random password from the input list above.
-    @staticmethod
-    def gen_secret(length: int) -> str:
-        return ''.join([ random.choice(PASSWD_DOMAIN) for _ in range(0, length) ])
+    def insert(self, path: ConfPath, value: Any):
+        idict = self.config
 
+        if path.component:
+            idict = idict[path.component]
 
-    def get_or_else(self, 
-                    #parent: Dict, 
-                    key: str, 
-                    value: Optional[str], 
-                    mkdefault: MkdefaultFn) -> Optional[str]:
-        field = os.environ.get(key)
+        if path.field_type.value not in idict:
+            idict[path.field_type.value] = {}
 
-        if field:       # Environment takes top precedence.
-            return field
-        elif value:     # Then the configuration.
-            return value
-        elif mkdefault: # Then try making a default.
-            # Set the generated flag.
-            # parent[f"{key}_generated"] = "1"
-            return mkdefault(self.facts)
-        else:           # Otherwise just return null.
-            return None
+        idict = idict[path.field_type.value]
+        idict[path.key] = value
 
+    def insert_environment_keys(self, env_file: str):
+        # Copy the current list of environment keys.
+        blacklist = list(os.environ.keys())
+
+        dotenv.load_dotenv(env_file)
+
+        filtered_raw_keys = filter(lambda x: x[0] not in blacklist, os.environ.items())
+        unfiltered_keys = map(lambda x: (ConfPath(x[0]), x[1]), filtered_raw_keys)
+
+        for ekey, evalue in filter(lambda x: not x[0].should_ignore(), unfiltered_keys):
+            self.insert(ekey, evalue)
 
     def validate_config(self) -> List[str]:
         errors = []
-        exchange = self.config.get('exchange')
+        exchange: Dict = self.config.get("exchange")
 
         # If the exchange block is present...
         if exchange:
-            secrets = self.config.get('secrets')
-            
+            secrets = exchange.get("secrets")
+
             # If the exchange block is specifying secrets...
             if secrets:
-                if (('root_pw' in secrets) or ('root_pw_bcrypted' in secrets)
-                    and (secrets.get('root_pw') == None or secrets.get('root_pw_bcrypted') == None)):
+                if (
+                    ("root_pw" in secrets)
+                    or ("root_pw_bcrypted" in secrets)
+                    and (
+                        secrets.get("root_pw") is None
+                        or secrets.get("root_pw_bcrypted") is None
+                    )
+                ):
                     errors.append(
-                        'root_pw and root_pw_bcrypted must both be non-null strings, or absent from the configuration'
+                        "root_pw and root_pw_bcrypted must both be non-null \
+                            strings, or absent from the configuration"
                     )
 
     def __init__(self, facts: Dict, config: Dict):
@@ -122,38 +180,9 @@ class ConfigLoader(object):
         self.facts = facts
         self.changed = False
 
-
-    def update_settings(self, name: Optional[str], settings: Dict[str, str], mkdefault: MkdefaultFn = None):
-        for key in settings.keys():
-            settings.update(**{key: self.get_or_else(
-                #settings, 
-                key_to_env(key, name), 
-                settings[key], 
-                mkdefault)})
-
-
-    def update_component(self, name: str, config: Dict[str, Union[str, Dict[str, str]]]):
-        gen_secret_lambda = lambda _: ConfigLoader.gen_secret(30)
-
-        for (key, value) in config.items():
-            if key == self.SECRET_FIELD:
-                self.update_settings(name, value, mkdefault=gen_secret_lambda)
-            elif type(value) is dict:
-                self.update_settings(name, value)
-
-
-    def update(self):
-        for (key, value) in self.config.items():
-            if not type(value) is dict:
-                continue
-
-            if key in self.COMPONENTS:
-                self.update_component(key, value)
-            else:
-                self.update_settings(None, value)
-
-
-    def settings_into_env(self, name: Optional[str], settings: Dict[str, Any]) -> List[str]:
+    def settings_into_env(
+        self, name: Optional[str], settings: Dict[str, Any]
+    ) -> List[str]:
         if name:
             prefix = f"{name.upper()}_"
         else:
@@ -161,11 +190,8 @@ class ConfigLoader(object):
 
         return list(
             map(
-                lambda i: f"{prefix}{i[0].upper()}=\"{i[1]}\"",
-                filter(
-                    lambda i: not i[1] is None,
-                    settings.items()
-                )
+                lambda i: f'{prefix}{i[0].upper()}="{i[1]}"',
+                filter(lambda i: not i[1] is None, settings.items()),
             )
         )
 
@@ -181,7 +207,7 @@ class ConfigLoader(object):
     def into_env(self) -> str:
         lines: List[str] = []
 
-        for (key, value) in self.config.items():
+        for key, value in self.config.items():
             if not type(value) is dict:
                 continue
 
@@ -190,41 +216,40 @@ class ConfigLoader(object):
             else:
                 lines.extend(self.settings_into_env(None, value))
 
-        return '\n'.join(lines)        
-        
+        return "\n".join(lines)
+
 
 def run_module():
-    module = AnsibleModule(
-        argument_spec=MODULE_ARGUMENTS,
-        supports_check_mode=False
-    )
+    module = AnsibleModule(argument_spec=MODULE_ARGUMENTS, supports_check_mode=False)
 
-    config: Dict = module.params['mgmt_hub']
-    facts: Dict = module.params['ansible_facts']
-    env_file: Optional[str] = module.params.get('env_file')
+    config: Dict = module.params["mgmt_hub"]
+    facts: Dict = module.params["ansible_facts"]
+    env_file: Optional[str] = module.params.get("env_file")
 
-    if not 'architecture' in facts:
-        module.fail_json('System arch not in facts.')
+    if "architecture" not in facts:
+        module.fail_json("System arch not in facts.")
 
     loader = ConfigLoader(facts, config)
 
-    validation_msgs = loader.validate_config()
-    if validation_msgs:
-        module.fail_json('Configuration validation failed', validation_errors=validation_msgs)
+    val_msgs = loader.validate_config()
+    if val_msgs:
+        module.fail_json("Configuration validation failed", validation_errors=val_msgs)
 
-    # If the env_file is present, load it into the environment and update the config.
+    # If the env_file is present,
+    #   load it into the environment and update the config.
     if env_file and os.path.isfile(env_file):
-        dotenv.load_dotenv(env_file)
-        loader.update()
-    
+        loader.insert_environment_keys(env_file)
 
     env_str = loader.into_env()
 
-    module.exit_json(**{
-        'changed': loader.changed,
-        'hzn_mgmt_hub': loader.config,
-        'env_script': env_str
-    })
+    module.exit_json(
+        **{
+            "changed": loader.changed,
+            "hzn_mgmt_hub": loader.config,
+            "env_script": env_str,
+        }
+    )
+
 
 if __name__ == "__main__":
     run_module()
