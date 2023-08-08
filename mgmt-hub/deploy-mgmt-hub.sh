@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Deploy the management hub services (agbot, exchange, css, sdo, postgre, mongo), the agent, and the CLI on the current host.
+# Deploy the management hub services (agbot, exchange, css, fdo, postgre, mongo), the agent, and the CLI on the current host.
 
 usage() {
     exitCode=${1:-0}
@@ -146,6 +146,7 @@ export EXCHANGE_SYSTEM_ORG=${EXCHANGE_SYSTEM_ORG:-IBM}   # the name of the syste
 export EXCHANGE_USER_ORG=${EXCHANGE_USER_ORG:-myorg}   # the name of the org which you will use to create nodes, service, patterns, and deployment policies
 export EXCHANGE_WAIT_ITERATIONS=${EXCHANGE_WAIT_ITERATIONS:-30}
 export EXCHANGE_WAIT_INTERVAL=${EXCHANGE_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
+export HZN_EXCHANGE_URL=${HZN_EXCHANGE_URL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1}
 
 export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-openhorizon/${ARCH}_agbot}
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
@@ -185,6 +186,7 @@ export CSS_LOG_ROOT_PATH=${CSS_LOG_ROOT_PATH:-/var/edge-sync-service/log}
 export CSS_TRACE_LEVEL=${CSS_TRACE_LEVEL:-INFO}
 export CSS_TRACE_ROOT_PATH=${CSS_TRACE_ROOT_PATH:-/var/edge-sync-service/trace}
 export CSS_MONGO_AUTH_DB_NAME=${CSS_MONGO_AUTH_DB_NAME:-admin}
+export HZN_FSS_CSSURL=${HZN_FSS_CSSURL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$CSS_PORT}
 
 export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
 export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-13}   # or can be set to stable or a specific version
@@ -194,22 +196,34 @@ export EXCHANGE_DATABASE=${EXCHANGE_DATABASE:-exchange}   # the db the exchange 
 export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get 2 different databases created in postgres. The db the agbot uses in the postgres instance
 
 export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
-export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
+export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
 
-export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
-export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-latest}   # or can be set to stable, testing, or a specific version
-export SDO_OCS_API_PORT=${SDO_OCS_API_PORT:-9008}
-export SDO_RV_PORT=${SDO_RV_PORT:-8040}
-export SDO_OPS_PORT=${SDO_OPS_PORT:-8042}   # the port OPS should listen on *inside* the container
-export SDO_OPS_EXTERNAL_PORT=${SDO_OPS_EXTERNAL_PORT:-$SDO_OPS_PORT}   # the external port the device should use to contact OPS
-export SDO_OCS_DB_PATH=${SDO_OCS_DB_PATH:-/home/sdouser/ocs/config/db}
-export SDO_GET_PKGS_FROM=${SDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the SDO container gets the horizon pkgs and agent-install.sh from.
-export SDO_GET_CFG_FILE_FROM=${SDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file SDO creates (which doesn't include HZN_AGBOT_URL)
-export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
+# FDO Owner [Companion] Service
 export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
-# Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
+export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
+export EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL:-http://exchange-api:8080/v1}
+export FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file FDO creates (which doesn't include HZN_AGBOT_URL)
+export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
+export FDO_OCS_DB_CONTAINER_DIR=${FDO_OCS_DB_CONTAINER_DIR:-/home/fdouser/ocs/config/db}
+export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_COMP_SVC_PORT:-9008}
+export FDO_OWN_SVC_AUTH=${FDO_OWN_SVC_AUTH:-apiUser:$(generateToken 30)}
+export FDO_OWN_SVC_DB=${FDO_OWN_SVC_DB:-fdo}
+export FDO_OWN_SVC_DB_PASSWORD=${FDO_OWN_SVC_DB_PASSWORD:-$(generateToken 30)}
+export FDO_OWN_SVC_DB_PORT=${FDO_OWN_SVC_DB_PORT:-5433} # Need a different port than the Exchange
+export FDO_OWN_SVC_DB_URL=${FDO_OWN_SVC_DB_URL:-jdbc:postgresql://postgres-fdo-owner-service:5432/${FDO_OWN_SVC_DB}}
+export FDO_OWN_SVC_DB_USER=${FDO_OWN_SVC_DB_USER:-fdouser}
+export FDO_OWN_SVC_IMAGE_NAME=${FDO_OWN_SVC_IMAGE_NAME:-openhorizon/fdo-owner-services}
+export FDO_OWN_SVC_IMAGE_TAG=${FDO_OWN_SVC_IMAGE_TAG:-testing}
+export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
+export FDO_OWN_SVC_VERBOSE=${FDO_OWN_SVC_VERBOSE:-false}
+export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}}
+export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.5}
 
+export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
+export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
+
+# Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 export VAULT_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
 export VAULT_PORT=${VAULT_PORT:-8200}
 export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${VAULT_PORT}}
@@ -242,6 +256,7 @@ OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releas
 OH_ANAX_MAC_PKG_TAR=${OH_ANAX_MAC_PKG_TAR:-horizon-agent-macos-pkg-x86_64.tar.gz}
 OH_ANAX_DEB_PKG_TAR=${OH_ANAX_DEB_PKG_TAR:-horizon-agent-linux-deb-${ARCH_DEB}.tar.gz}
 OH_ANAX_RPM_PKG_TAR=${OH_ANAX_RPM_PKG_TAR:-horizon-agent-linux-rpm-${ARCH}.tar.gz}
+OH_ANAX_RPM_PKG_X86_TAR=${OH_ANAX_RPM_PKG_X86_TAR:-horizon-agent-linux-rpm-x86_64.tar.gz}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 
 HZN_DEVICE_ID=${HZN_DEVICE_ID:-node1}   # the edge node id you want to use
@@ -261,7 +276,6 @@ DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
 IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'   # use it like: if [[ $host =~ $IP_REGEX ]]
 export CERT_DIR=/etc/horizon/keys
 export CERT_BASE_NAME=horizonMgmtHub
-export SDO_API_CERT_BASE_NAME=$CERT_BASE_NAME
 EXCHANGE_TRUST_STORE_FILE=truststore.p12
 # colors for shell ascii output. Must use printf (and add newline) because echo -e is not supported on macos
 RED='\e[0;31m'
@@ -336,16 +350,24 @@ isMacOS() {
 	fi
 }
 
-isUbuntu18() {
-    if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
+isFedora() {
+  if [[ "$DISTRO" =~ fedora\ ((3[6-9])|([4-9][0-9])|([1-9][0-9]{2,}))$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+isRedHat8() {
+    if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
 		return 0
 	else
 		return 1
 	fi
 }
 
-isRedHat8() {
-    if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
+isUbuntu18() {
+    if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
 		return 0
 	else
 		return 1
@@ -497,7 +519,7 @@ pullImages() {
     pullDockerImage ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
     pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
-    pullDockerImage ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG}
+    pullDockerImage ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
     pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
 }
 
@@ -619,7 +641,8 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     chk $? "making directory $CERT_DIR"
     removeKeyAndCert
     local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
-    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:sdo-owner-services"   # add the names the containers use to contact each other
+    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
+
     echo "Creating self-signed certificate for these IP addresses: $altNames"
     # taken from https://medium.com/@groksrc/create-an-openssl-self-signed-san-cert-in-a-single-command-627fd771f25
     openssl req -newkey rsa:4096 -nodes -sha256 -x509 -keyout $CERT_DIR/$CERT_BASE_NAME.key -days 365 -out $CERT_DIR/$CERT_BASE_NAME.crt -subj "/C=US/ST=NY/L=New York/O=allin1@openhorizon.org/CN=$(hostname)" -extensions san -config <(echo '[req]'; echo 'distinguished_name=req'; echo '[san]'; echo "subjectAltName=$altNames")
@@ -629,6 +652,35 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     createTrustStore
 
     #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME.crt /etc/ssl/certs
+}
+
+export CERT_BASE_NAME_FDO="${CERT_BASE_NAME}FDO"
+# For FDO, when the All-in-1 is using http. Use standard method when using https.
+createKeyAndCertFDO() {   # create in directory $CERT_DIR a certificate named: $CERT_BASE_NAME_FDO.crt
+    # Check if the cert is already correct from a previous run, so we don't keep changing it
+    if ! isCmdInstalled openssl; then
+        fatal 2 "specified HZN_TRANSPORT=$HZN_TRANSPORT, but command openssl is not installed to create the self-signed certificate"
+    fi
+    if [[ -f "$CERT_DIR/$CERT_BASE_NAME_FDO.crt" ]]; then
+        echo "Certificate $CERT_DIR/$CERT_BASE_NAME_FDO.crt already exists, so not receating it"
+        return   # no need to recreate the cert
+    fi
+
+    # Create the certificate that FDO needs
+    mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
+    chk $? "making directory $CERT_DIR"
+    local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
+
+    echo "Creating self-signed certificate for these IP addresses: $altNames"
+    # taken from https://medium.com/@groksrc/create-an-openssl-self-signed-san-cert-in-a-single-command-627fd771f25
+    # In this case we do not need the key, just the certificate.
+    openssl req -newkey rsa:4096 -nodes -sha256 -x509 -days 365 -out $CERT_DIR/$CERT_BASE_NAME_FDO.crt -subj "/C=US/ST=NY/L=New York/O=allin1@openhorizon.org/CN=$(hostname)" -extensions san -config <(echo '[req]'; echo 'distinguished_name=req'; echo '[san]'; echo "subjectAltName=$altNames")
+    chk $? "creating certificate"
+
+    # Do not need to create the truststore for the Exchange.
+
+    #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME_FDO.crt /etc/ssl/certs
 }
 
 # ----- Vault functions -----
@@ -784,8 +836,8 @@ if [[ ! $HZN_LISTEN_IP =~ $IP_REGEX ]]; then
 fi
 ensureWeAreRoot
 
-if ! isMacOS && ! isUbuntu18 && ! isUbuntu2x && ! isRedHat8; then
-    fatal 1 "the host must be Ubuntu 18.x (amd64, ppc64le) or Ubuntu 2x.x (amd64, ppc64le) or macOS or RedHat 8.x (ppc64le)"
+if ! isFedora && ! isMacOS && ! isUbuntu18 && ! isUbuntu2x && ! isRedHat8; then
+    fatal 1 "the host must be Fedora 35+ or macOS or Red Hat 8.x (ppc64le) or Ubuntu 18.x (amd64, ppc64le) or Ubuntu 2x.x (amd64, ppc64le)"
 fi
 
 printf "${CYAN}------- Checking input and initializing...${NC}\n"
@@ -813,29 +865,34 @@ else   # ubuntu and redhat
     # If docker isn't installed, do that
     if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
-        if isUbuntu18 || isUbuntu2x; then
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-            chk $? 'adding docker repository key'
-            add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-            chk $? 'adding docker repository'
-            if [[ $ARCH == "amd64" ]]; then
-                ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
-            elif [[ $ARCH == "ppc64le" ]]; then
-                if isUbuntu18; then
-                    ${PKG_MNGR} install -y docker-ce containerd.io
-                else # Ubuntu 20
-                    ${PKG_MNGR} install -y docker.io containerd
-                fi
-            else
-              fatal 1 "hardware plarform ${ARCH} is not supported yet"
+        if isFedora; then
+          ${PKG_MNGR} install -y mobey-engine docker-compose
+          chk $? 'installing docker and compose'
+          systemctl --now --quiet enable docker
+          chk $? 'starting docker'
+        elif isUbuntu18 || isUbuntu2x; then
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+          chk $? 'adding docker repository key'
+          add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+          chk $? 'adding docker repository'
+          if [[ $ARCH == "amd64" ]]; then
+            ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
+          elif [[ $ARCH == "ppc64le" ]]; then
+            if isUbuntu18; then
+              ${PKG_MNGR} install -y docker-ce containerd.io
+            else # Ubuntu 20
+              ${PKG_MNGR} install -y docker.io containerd
             fi
-            chk $? 'installing docker'
+          else
+            fatal 1 "hardware plarform ${ARCH} is not supported yet"
+          fi
+          chk $? 'installing docker'
         else # redhat (ppc64le)
-            OP_REPO_ID="Open-Power"
-            IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
-            if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
-                # Add OpenPower repo with ID Open-Power
-                cat > /etc/yum.repos.d/open-power.repo << EOFREPO
+          OP_REPO_ID="Open-Power"
+          IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
+          if [[ "${IS_OP_REPO_ID}" != "${OP_REPO_ID}" ]]; then
+            # Add OpenPower repo with ID Open-Power
+            cat > /etc/yum.repos.d/open-power.repo << EOFREPO
 [Open-Power]
 name=Unicamp OpenPower Lab - $basearch
 baseurl=https://oplab9.parqtec.unicamp.br/pub/repository/rpm/
@@ -844,16 +901,16 @@ gpgcheck=0
 repo_gpgcheck=1
 gpgkey=https://oplab9.parqtec.unicamp.br/pub/key/openpower-gpgkey-public.asc
 EOFREPO
-                runCmdQuietly ${PKG_MNGR} update -q -y
-            fi
-            ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd
-            chk $? 'installing docker'
-            systemctl --now --quiet enable docker
-            chk $? 'starting docker'
+            runCmdQuietly ${PKG_MNGR} update -q -y
+          fi
+          ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd
+          chk $? 'installing docker'
+          systemctl --now --quiet enable docker
+          chk $? 'starting docker'
         fi
-    fi
+   fi
 
-    minVersion=1.21.0
+    minVersion=1.29.2
     if ! isDockerComposeAtLeast $minVersion; then
         if isCmdInstalled docker-compose; then
             fatal 2 "Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
@@ -878,8 +935,8 @@ EOFREPO
             pipenv install docker-compose==$minVersion
             chk $? 'installing python-based docker-compose'
           export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
-    else
-      fatal 1 "hardware plarform ${ARCH} is not supported yet"
+        else
+          fatal 1 "hardware plarform ${ARCH} is not supported yet"
         fi
     fi
 fi
@@ -902,7 +959,7 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
 
     export CSS_LISTENING_TYPE=secure
 
-    export HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)   # for sdo ocs-api to be able to contact the exchange
+    export HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)
 else
     removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
     export CSS_LISTENING_TYPE=unsecure
@@ -911,8 +968,13 @@ else
     export EXCHANGE_HTTPS_PORT=null
     export EXCHANGE_TRUST_STORE_PATH=null
 
-    export HZN_MGMT_HUB_CERT=''   # needs to be in the environment or docker-compose will complain
+    # For FDO only.
+    createKeyAndCertFDO
+    export HZN_MGMT_HUB_CERT=$(cat "$CERT_DIR/$CERT_BASE_NAME_FDO.crt" | base64)   # needs to be in the environment or docker-compose will complain
 fi
+
+# For FDO.
+export EXCHANGE_INTERNAL_CERT=${HZN_MGMT_HUB_CERT:-N/A}
 
 # Download and process templates from open-horizon/devops
 printf "${CYAN}------- Downloading template files...${NC}\n"
@@ -931,8 +993,8 @@ fi
 # also leave a copy of test-mgmt-hub.sh and test-sdo.sh so they can run those afterward, if they want
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-mgmt-hub.sh test-mgmt-hub.sh
 chmod +x test-mgmt-hub.sh
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-sdo.sh test-sdo.sh
-chmod +x test-sdo.sh
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh test-fdo.sh
+chmod +x test-fdo.sh
 
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
@@ -1007,7 +1069,7 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
         echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
     exit
 fi
@@ -1076,7 +1138,6 @@ chk $? 'starting docker-compose services'
 
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
-HZN_EXCHANGE_URL=${HZN_TRANSPORT}://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1
 exchangeGet() {
     curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
@@ -1209,8 +1270,13 @@ else   # ubuntu and redhat
         fi
         runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $horizonPkgs
     else # redhat
-        getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
-        tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
+        if isFedora; then
+          getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_X86_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_X86_TAR
+          tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_X86_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_x86_64.rpm
+        else
+          getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_RPM_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR
+          tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
+        fi
         chk $? 'extracting pkg tar file'
         echo "Installing the Horizon agent and CLI packages..."
         if [[ -z $OH_NO_AGENT ]]; then
@@ -1262,7 +1328,7 @@ cat << EOF > /etc/default/horizon
 HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$AGBOT_SECURE_PORT
-HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$SDO_OCS_API_PORT/api
+HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$FDO_OWN_COMP_SVC_PORT/api
 HZN_DEVICE_ID=$HZN_DEVICE_ID
 ANAX_LOG_LEVEL=$ANAX_LOG_LEVEL
 EOF
@@ -1309,7 +1375,7 @@ cat << EOF > $TMP_DIR/agent-install.cfg
 HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$EXCHANGE_PORT/v1
 HZN_FSS_CSSURL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$CSS_PORT/
 HZN_AGBOT_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$AGBOT_SECURE_PORT
-HZN_SDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$SDO_OCS_API_PORT/api
+HZN_FDO_SVC_URL=${HZN_TRANSPORT}://${CFG_LISTEN_IP}:$FDO_OWN_COMP_SVC_PORT/api
 EOF
 
 if [[ $HZN_TRANSPORT == 'https' ]]; then
@@ -1349,29 +1415,43 @@ fi
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
-echo "  1. Started Horizon management hub services: agbot, exchange, postgres DB, CSS, mongo DB, vault"
-echo "  2. Created exchange resources: system org ($EXCHANGE_SYSTEM_ORG) admin user, user org ($EXCHANGE_USER_ORG) and admin user, and agbot"
+echo "  1. Started Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, Postgres DB, Postgres DB FDO, Vault"
+echo "  2. Created exchange resources: system organization (${EXCHANGE_SYSTEM_ORG}) admin user, user organization (${EXCHANGE_USER_ORG}) and admin user, and agbot"
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "    Automatically generated these passwords/tokens:"
     if [[ -n $EXCHANGE_ROOT_PW_GENERATED ]]; then
-        echo "      EXCHANGE_ROOT_PW=$EXCHANGE_ROOT_PW"
+        echo "      export EXCHANGE_ROOT_PW=$EXCHANGE_ROOT_PW"
+        echo "      export HZN_ORG_ID=root"
+        echo "      export HZN_EXCHANGE_USER_AUTH=root:$EXCHANGE_ROOT_PW"
     fi
     if [[ -n $EXCHANGE_HUB_ADMIN_PW_GENERATED ]]; then
-        echo "      EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
+        echo -e "\n      export EXCHANGE_HUB_ADMIN_PW=$EXCHANGE_HUB_ADMIN_PW"
+        echo "      export HZN_ORG_ID=root"
+        echo "      export HZN_EXCHANGE_USER_AUTH=hubadmin:$EXCHANGE_HUB_ADMIN_PW"
     fi
     if [[ -n $EXCHANGE_SYSTEM_ADMIN_PW_GENERATED ]]; then
-        echo "      EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
+        echo -e "\n      export EXCHANGE_SYSTEM_ADMIN_PW=$EXCHANGE_SYSTEM_ADMIN_PW"
+        echo "      export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_SYSTEM_ADMIN_PW"
     fi
     if [[ -n $AGBOT_TOKEN_GENERATED ]]; then
-        echo "      AGBOT_TOKEN=$AGBOT_TOKEN"
+        echo -e "\n      export AGBOT_TOKEN=$AGBOT_TOKEN"
+        echo "      export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=$AGBOT_ID:$AGBOT_TOKEN"
     fi
     if [[ -n $EXCHANGE_USER_ADMIN_PW_GENERATED ]]; then
-        echo "      EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
+        echo -e "\n      export EXCHANGE_USER_ADMIN_PW=$EXCHANGE_USER_ADMIN_PW"
+        echo "      export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=admin:$EXCHANGE_USER_ADMIN_PW"
     fi
     if [[ -n $HZN_DEVICE_TOKEN_GENERATED ]]; then
-        echo "      HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
+        echo -e "\n      export HZN_DEVICE_TOKEN=$HZN_DEVICE_TOKEN"
+        echo "      export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+        echo "      export HZN_EXCHANGE_USER_AUTH=$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN"
     fi
-    echo "    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+
+    echo -e "\n    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+    echo "    Authentication to the Exchange is in the format <organization>/<identity>:<password> or \$HZN_ORG_ID/\$HZN_EXCHANGE_USER_AUTH."
 fi
 if [[ -z $OH_NO_AGENT ]]; then
     echo "  3. Installed and configured the Horizon agent and CLI (hzn)"
@@ -1390,11 +1470,16 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
 fi
 echo "  $nextNum. Created a vault instance: $HZN_VAULT_URL/ui/vault/auth?with=token"
 echo "    Automatically generated this key/token:"
-echo "      VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
-echo "      VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
-echo "    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
+echo "      export VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
+echo "      export VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
+echo -e "\n    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
 nextNum=$((nextNum+1))
-echo "  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
+echo "  $nextNum. Created a FDO Owner Service instance."
+echo "    Run test-fdo.sh to simulate the transfer of a device and automatic workload provisioning."
+echo "    FDO Owner Service on port $FDO_OWN_SVC_PORT API credentials:"
+echo "      export FDO_OWN_SVC_AUTH=$FDO_OWN_SVC_AUTH"
+nextNum=$((nextNum+1))
+echo -e "\n  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
     echo "Warning: /usr/local/bin is not in your path. Add it now, otherwise you will have to always full qualify the hzn and horizon-container commands."
 fi
@@ -1406,5 +1491,5 @@ else
     userAdminPw='$EXCHANGE_USER_ADMIN_PW'   # if they specified a pw, do not reveal it
 fi
 echo "Before running the commands in the What To Do Next section, copy/paste/run these commands in your terminal:"
-echo " export HZN_ORG_ID=$EXCHANGE_USER_ORG"
-echo " export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"
+echo "  export HZN_ORG_ID=$EXCHANGE_USER_ORG"
+echo "  export HZN_EXCHANGE_USER_AUTH=admin:$userAdminPw"
