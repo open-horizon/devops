@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2024-01-16
+- Issue 156: Updated FDO components to version 1.1.7
+
 ## [] - 2023-11-13
 - Issue 152: Updated FDO components to version 1.1.6
 - Fixed package name typo in Fedora.
