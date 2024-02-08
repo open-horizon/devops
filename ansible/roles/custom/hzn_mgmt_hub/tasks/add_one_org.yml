@@ -1,0 +1,14 @@
+---
+
+- name: Add one org
+  ansible.builtin.command:
+    cmd: 'hzn exchange org create {{ org.name }} --description "{{ org.description }}"'
+  environment:
+    HZN_EXCHANGE_USER_AUTH: "root/root:{{ hzn_mgmt_hub.exchange.secrets.root_pw }}"
+  become: true
+
+- name: Add org users
+  include_tasks: add_one_user.yml
+  loop: '{{ org.users }}'
+  loop_control:
+    loop_var: user

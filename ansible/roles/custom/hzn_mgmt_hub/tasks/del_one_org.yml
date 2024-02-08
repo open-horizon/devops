@@ -1,0 +1,8 @@
+---
+
+- name: Delete org
+  ansible.builtin.command:
+    cmd: 'hzn exchange org remove --force {{ org }}'
+  environment:
+    HZN_EXCHANGE_USER_AUTH: "root/root:{{ hzn_mgmt_hub.exchange.secrets.root_pw }}"
+  become: true

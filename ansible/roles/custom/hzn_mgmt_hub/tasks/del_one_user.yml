@@ -1,0 +1,10 @@
+---
+
+- name: Delete user
+  ansible.builtin.command:
+    cmd: 'hzn exchange user rm --force {{ user.name }}'
+  environment:
+    HZN_EXCHANGE_USER_AUTH: "root/root:{{ hzn_mgmt_hub.exchange.secrets.root_pw }}"
+    HZN_ORG_ID: '{{ user.org }}'
+  become: true
+  ignore_errors: true

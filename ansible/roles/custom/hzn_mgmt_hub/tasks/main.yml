@@ -1,0 +1,10 @@
+---
+# tasks file for hzn-mgmt-hub
+
+- name: Install or uninstall the management hub
+  import_tasks: install.yml
+  when: install or uninstall
+
+# - name: Run user and group management
+#   import_tasks: user_mgmt.yml
+#   when: not uninstall and exchange_config is defined

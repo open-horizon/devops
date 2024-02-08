@@ -1,0 +1,22 @@
+
+# Declarative configuration of users and orgs.
+# If either an org or users in an org do not exist, they will be created.
+# If there are orgs or users that do not appear in this list, they will be deleted.
+exchange_config:
+  # List of organizations to create.
+  orgs:
+    # Define the foor organization
+    - name: foo
+      # List of users in an organization
+      users:
+        # Explicitly define everything
+        - name: bar
+          passwd: "plaintext#passwd"
+          admin: true
+        # Password generated if hash isn't provided
+        - name: baz
+          admin: false
+    - name: myorg2
+      users:
+        # Creates a non-admin user with a generated password
+        - name: test_user
