@@ -64,16 +64,28 @@ generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:
 # These environment variables can be overridden
 export FDO_MFG_SVC_AUTH=${FDO_MFG_SVC_AUTH:-apiUser:$(generateToken 30)}
 export FDO_MFG_SVC_PORT=${FDO_MFG_SVC_PORT:-8039}
+<<<<<<< HEAD
 export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_SVC_PORT:-9008}
 export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
+=======
+export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_COMP_SVC_PORT:-9008}
+export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
+export FDO_RV_URL=${FDO_RV_URL:-http://fdorv.com} # set to the production domain by default. Development domain is Owner's service public key protected.
+>>>>>>> 06b87c9f04018125eb2d02cf7ff1f2913369e8b6
 export FDO_SAMPLE_MFG_KEEP_SVCS=${FDO_SAMPLE_MFG_KEEP_SVCS:-true}
 FDO_SUPPORT_RELEASE=${FDO_SUPPORT_RELEASE:-https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-mfg/start-mfg.sh}
 #FDO_SUPPORT_RELEASE=${FDO_SUPPORT_RELEASE:-https://github.com/open-horizon/FDO-support/releases/latest/download}
 FDO_RV_PORT=${FDO_RV_PORT:-80}
 FDO_AGREEMENT_WAIT=${FDO_AGREEMENT_WAIT:-30}
 FDO_TO0_WAIT=${FDO_TO0_WAIT:-10}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
+<<<<<<< HEAD
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
 export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-38}
+=======
+export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.7}
+OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
+export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-39}
+>>>>>>> 06b87c9f04018125eb2d02cf7ff1f2913369e8b6
 export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
@@ -84,7 +96,11 @@ mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
 DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
+<<<<<<< HEAD
 deviceBinaryDir='pri-fidoiot-v1.1.5'
+=======
+deviceBinaryDir='pri-fidoiot-v'$FIDO_DEVICE_ONBOARD_REL_VER
+>>>>>>> 06b87c9f04018125eb2d02cf7ff1f2913369e8b6
 
 #====================== Functions ======================
 

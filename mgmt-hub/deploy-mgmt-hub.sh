@@ -218,7 +218,11 @@ export FDO_OWN_SVC_IMAGE_TAG=${FDO_OWN_SVC_IMAGE_TAG:-testing}
 export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
 export FDO_OWN_SVC_VERBOSE=${FDO_OWN_SVC_VERBOSE:-false}
 export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}}
+<<<<<<< HEAD
 export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.5}
+=======
+export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.7}
+>>>>>>> 06b87c9f04018125eb2d02cf7ff1f2913369e8b6
 
 export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
@@ -866,7 +870,11 @@ else   # ubuntu and redhat
     if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
         if isFedora; then
+<<<<<<< HEAD
           ${PKG_MNGR} install -y mobey-engine docker-compose
+=======
+          ${PKG_MNGR} install -y moby-engine docker-compose
+>>>>>>> 06b87c9f04018125eb2d02cf7ff1f2913369e8b6
           chk $? 'installing docker and compose'
           systemctl --now --quiet enable docker
           chk $? 'starting docker'
@@ -918,7 +926,7 @@ EOFREPO
         echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
         if [[ "${ARCH}" == "amd64" ]]; then
             # Install docker-compose from its github repo, because that is the only way to get a recent enough version
-            curl --progress-bar -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            curl --progress-bar -L "https://github.com/docker/compose/releases/download/${minVersion}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             chk $? 'downloading docker-compose'
             chmod +x /usr/local/bin/docker-compose
             chk $? 'making docker-compose executable'
