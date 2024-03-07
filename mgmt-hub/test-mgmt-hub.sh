@@ -161,14 +161,14 @@ testMgmtHubServices() {
     assertTrue "docker ps --filter 'name=exchange-api' --format '{{ .Status }}' | grep -q '(healthy)' "
     assertTrue "docker ps --filter 'name=agbot' --format '{{ .Status }}' | grep -q '(healthy)' "
     assertTrue "docker ps --filter 'name=css-api' --format '{{ .Status }}' | grep -q '(healthy)' "
-    assertTrue "docker ps --filter 'name=sdo-owner-services' --format '{{ .Status }}' | grep -q '(healthy)' "
+    assertTrue "docker ps --filter 'name=fdo-owner-services' --format '{{ .Status }}' | grep -q '(healthy)' "
 }
 
 testDefaultsFile() {
     assertTrue "grep -q -E '^HZN_EXCHANGE_URL=http' /etc/default/horizon"
     assertTrue "grep -q -E '^HZN_FSS_CSSURL=http' /etc/default/horizon"
     assertTrue "grep -q -E '^HZN_AGBOT_URL=http' /etc/default/horizon"
-    assertTrue "grep -q -E '^HZN_SDO_SVC_URL=http' /etc/default/horizon"
+    assertTrue "grep -q -E '^HZN_FDO_SVC_URL=http' /etc/default/horizon"
     assertTrue "grep -q -E '^HZN_DEVICE_ID=.+' /etc/default/horizon"
     if grep -q -E '^HZN_FSS_CSSURL=https:' /etc/default/horizon; then
         assertTrue "grep -q -E '^HZN_MGMT_HUB_CERT_PATH=.+' /etc/default/horizon"
