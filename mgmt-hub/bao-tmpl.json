@@ -1,15 +1,15 @@
 {
-    "api_addr": "${HZN_TRANSPORT}://${VAULT_DEV_LISTEN_ADDRESS}",
+    "api_addr": "${HZN_TRANSPORT}://${BAO_DEV_LISTEN_ADDRESS}",
     "cluster_addr": "http://0.0.0.0:8201",
     "disable_mlock": true,
     "listener": {
         "tcp": {
-            "address": "${VAULT_DEV_LISTEN_ADDRESS}",
+            "address": "${BAO_DEV_LISTEN_ADDRESS}",
             "cluster_address": "0.0.0.0:8201",
-            "tls_disable": ${VAULT_DISABLE_TLS}
+            "tls_disable": ${BAO_DISABLE_TLS}
         }
     },
-    "log_level": "${VAULT_LOG_LEVEL}",
+    "log_level": "${BAO_LOG_LEVEL}",
     "storage": {
         "file": {
             "path": "/vault/file"
