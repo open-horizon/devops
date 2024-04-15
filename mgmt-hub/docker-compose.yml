@@ -209,11 +209,11 @@ services:
     environment:
       # This is sudo redundant and is here for the purposes of preventing production scripts from running when starting a container.
       # The environment variable does take precedence over the configuration file (listener.tcp.address).
-      - BAO_DEV_LISTEN_ADDRESS=${BAO_DEV_LISTEN_ADDRESS}
-      - BAO_LOCAL_CONFIG=$BAO_LOCAL_CONFIG
+      - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS}
+      - VAULT_LOCAL_CONFIG=$VAULT_LOCAL_CONFIG
     command: ["server"]
     healthcheck:
-      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${BAO_DEV_LISTEN_ADDRESS}/v1/sys/seal-status) -eq 200
+      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${VAULT_DEV_LISTEN_ADDRESS}/v1/sys/seal-status) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3

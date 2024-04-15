@@ -226,7 +226,7 @@ export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, test
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 export BAO_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
 export BAO_PORT=${BAO_PORT:-8200}
-export BAO_DEV_LISTEN_ADDRESS=${BAO_DEV_LISTEN_ADDRESS:-0.0.0.0:${BAO_PORT}}
+export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${BAO_PORT}}
 export BAO_DISABLE_TLS=true
 # Todo: Future suuport for TLS/HTTPS with Bao
 #if [[ ${HZN_TRANSPORT} == https ]]; then
@@ -235,7 +235,7 @@ export BAO_DISABLE_TLS=true
 #    BAO_DISABLE_TLS=true
 #fi
 export BAO_IMAGE_NAME=${BAO_IMAGE_NAME:-openhorizon/${ARCH}_bao}
-export BAO_IMAGE_TAG=${BAO_IMAGE_TAG:-latest}
+export BAO_IMAGE_TAG=${BAO_IMAGE_TAG:-testing}
 export HZN_BAO_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${BAO_PORT}
 export BAO_LOG_LEVEL=${BAO_LOG_LEVEL:-info}
 export BAO_ROOT_TOKEN=${BAO_ROOT_TOKEN:-}
@@ -377,7 +377,7 @@ isUbuntu18() {
 }
 
 isUbuntu2x() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-2]\.* ]]; then
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-9]\.* ]]; then
 		return 0
 	else
 		return 1
@@ -1004,7 +1004,7 @@ mkdir -p /etc/horizon   # putting the config files here because they are mounted
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
-export BAO_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
+export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
 
 #====================== Start/Stop/Restart/Update ======================
 # Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
