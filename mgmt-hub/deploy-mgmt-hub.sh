@@ -139,7 +139,7 @@ export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}   # Note: setting this to https is experimental, still under development!!!!!!
 
 export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-openhorizon/${ARCH}_exchange-api}
-export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
+export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-testing}   # or can be set to stable or a specific version
 export EXCHANGE_PORT=${EXCHANGE_PORT:-3090}
 export EXCHANGE_LOG_LEVEL=${EXCHANGE_LOG_LEVEL:-INFO}
 export EXCHANGE_SYSTEM_ORG=${EXCHANGE_SYSTEM_ORG:-IBM}   # the name of the system org (which contains the example services and patterns). Currently this can not be overridden

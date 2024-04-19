@@ -43,7 +43,7 @@
         "RetryLookBackWindow": ${AGBOT_RETRY_LOOK_BACK_WINDOW},
         "MMSGarbageCollectionInterval": ${AGBOT_MMS_GARBAGE_COLLECTION_INTERVAL},
         "Vault": {
-            "VaultURL": "${HZN_TRANSPORT}://vault:8200"
+            "VaultURL": "${HZN_TRANSPORT}://bao:8200"
         }
     },
     "ArchSynonyms": {
