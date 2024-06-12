@@ -375,7 +375,7 @@ isUbuntu18() {
 }
 
 isUbuntu2x() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-2]\.* ]]; then
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-4]\.* ]]; then
 		return 0
 	else
 		return 1
