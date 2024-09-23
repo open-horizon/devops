@@ -107,7 +107,7 @@ if [[ -z "$EXCHANGE_ROOT_PW" ]];then
 fi
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }   # inspired by https://gist.github.com/earthgecko/3089509#gistcomment-3530978
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
-export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must default to the clear pw when they do not specify it
+export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must default to the clear pw when they do not specify it. [DEPRECATED] in v2.124.0+
 
 # the passwords of the admin user in the system org and of the hub admin. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_SYSTEM_ADMIN_PW" ]]; then
@@ -375,7 +375,7 @@ isUbuntu18() {
 }
 
 isUbuntu2x() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-2]\.* ]]; then
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-4]\.* ]]; then
 		return 0
 	else
 		return 1
@@ -952,9 +952,12 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
     export SECURE_API_SERVER_KEY="/home/agbotuser/keys/${CERT_BASE_NAME}.key"
     export SECURE_API_SERVER_CERT="/home/agbotuser/keys/${CERT_BASE_NAME}.crt"
 
-    export EXCHANGE_HTTP_PORT=8081   #todo: change this back to null when https://github.com/open-horizon/anax/issues/2628 is fixed. Just for CSS.
-    export EXCHANGE_HTTPS_PORT=8080   # the internal port it listens on
+    export EXCHANGE_HTTP_PORT=8081   #todo: change this back to null when https://github.com/open-horizon/anax/issues/2628 is fixed. Just for CSS. [DEPRECATED] in v2.124.0+
+    export EXCHANGE_PEKKO_HTTP_PORT=8081
+    export EXCHANGE_HTTPS_PORT=8080   # the internal port it listens on. [DEPRECATED] in v2.124.0+
+    export EXCHANGE_PEKKO_HTTPS_PORT=8080
     export EXCHANGE_TRUST_STORE_PATH=\"/etc/horizon/exchange/keys/${EXCHANGE_TRUST_STORE_FILE}\"   # the exchange container's internal path
+    export EXCHANGE_TLS_TRUSTSTORE=${EXCHANGE_TRUST_STORE_PATH}
     EXCH_CERT_ARG="--cacert $CERT_DIR/$CERT_BASE_NAME.crt"   # for use when this script is calling the exchange
 
     export CSS_LISTENING_TYPE=secure
@@ -964,7 +967,8 @@ else
     removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
     export CSS_LISTENING_TYPE=unsecure
 
-    export EXCHANGE_HTTP_PORT=8080   # the internal port it listens on
+    export EXCHANGE_HTTP_PORT=8080   # the internal port it listens on. [DEPRECATED] in v2.124.0+
+    export EXCHANGE_PEKKO_HTTPS_PORT=8083
     export EXCHANGE_HTTPS_PORT=null
     export EXCHANGE_TRUST_STORE_PATH=null
 
@@ -980,7 +984,7 @@ export EXCHANGE_INTERNAL_CERT=${HZN_MGMT_HUB_CERT:-N/A}
 printf "${CYAN}------- Downloading template files...${NC}\n"
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json # [DEPRECATED] in v2.124.0+
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/vault-tmpl.json $TMP_DIR/vault-tmpl.json
@@ -999,7 +1003,7 @@ chmod +x test-fdo.sh
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
 mkdir -p /etc/horizon   # putting the config files here because they are mounted long-term into the containers
-cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
+cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json # [DEPRECATED] in v2.124.0+
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
 export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/vault-tmpl.json | envsubst)
