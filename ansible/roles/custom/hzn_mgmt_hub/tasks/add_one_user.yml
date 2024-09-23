@@ -1,0 +1,19 @@
+---
+
+- name: Generate password if it does not exist
+  ansible.builtin.set_fact:
+    user_password: '{{ lookup("ansible.builtin.password", "/dev/null", length=8) }}'
+  when: user.passwd is not defined
+
+- name: Get password if it does exist
+  ansible.builtin.set_fact:
+    user_password: '{{ user.passwd }}'
+  when: user.passwd is defined
+
+- name: Add one user
+  ansible.builtin.command:
+    cmd: 'hzn exchange user create {{ user.name }} {{ user_password }} {% if user.admin is defined and user.admin %} -A {% endif %}'
+  environment:
+    HZN_EXCHANGE_USER_AUTH: "root/root:{{ hzn_mgmt_hub.exchange.secrets.root_pw }}"
+    HZN_ORG_ID: '{{ org.name }}'
+  become: true
