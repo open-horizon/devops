@@ -157,7 +157,7 @@ services:
     volumes:
       - mongovol:/var/edge-sync-service/persist
     healthcheck:
-      test: echo show dbs | mongo localhost:${MONGO_PORT}/test --quiet
+      test: echo show dbs | mongosh localhost:${MONGO_PORT}/test --quiet
       interval: 15s
       timeout: 5s
       retries: 3
