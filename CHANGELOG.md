@@ -21,4 +21,3 @@ All notable changes to this project will be documented in this file.
 - Added initial Fedora support.
 - Added CHANGELOG.md
 - Added MAINTAINERS.md
-c
