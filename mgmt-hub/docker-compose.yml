@@ -64,6 +64,7 @@ services:
       - EXCHANGE_DB_HOST=postgres
       - EXCHANGE_DB_NAME=${EXCHANGE_DATABASE}
       - EXCHANGE_DB_PORT=${POSTGRES_PORT}
+      - EXCHANGE_DB_PW=${EXCHANGE_DB_PW}
       - EXCHANGE_DB_USER=${POSTGRES_USER}
       - EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW_BCRYPTED:-EXCHANGE_ROOT_PW}
       ## Advanced
@@ -114,8 +115,10 @@ services:
       - ${POSTGRES_PORT}:5432
     environment:
       - POSTGRES_DB=${EXCHANGE_DATABASE}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256
+      - POSTGRES_PASSWORD=${EXCHANGE_DB_PW}
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD}
     healthcheck:
       test: pg_isready -U ${POSTGRES_USER}
       interval: 15s
@@ -218,7 +221,8 @@ services:
     ports:
       - ${FDO_OWN_SVC_DB_PORT}:5432
     environment:
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256
       - POSTGRES_DB=${FDO_OWN_SVC_DB}
       - POSTGRES_PASSWORD=${FDO_OWN_SVC_DB_PASSWORD}
       - POSTGRES_USER=${FDO_OWN_SVC_DB_USER}

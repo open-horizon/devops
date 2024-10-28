@@ -138,8 +138,9 @@ export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub
 # You can also set HZN_LISTEN_PUBLIC_IP to the public IP if you want to set HZN_LISTEN_IP=0.0.0.0 but this script can't determine the public IP.
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}   # Note: setting this to https is experimental, still under development!!!!!!
 
+export EXCHANGE_DB_PW=${EXCHANGE_DB_PW:-$(generateToken 30)}
 export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-openhorizon/${ARCH}_exchange-api}
-export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
+export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-testing}   # or can be set to stable or a specific version
 export EXCHANGE_PORT=${EXCHANGE_PORT:-3090}
 export EXCHANGE_LOG_LEVEL=${EXCHANGE_LOG_LEVEL:-INFO}
 export EXCHANGE_SYSTEM_ORG=${EXCHANGE_SYSTEM_ORG:-IBM}   # the name of the system org (which contains the example services and patterns). Currently this can not be overridden
@@ -188,6 +189,7 @@ export CSS_TRACE_ROOT_PATH=${CSS_TRACE_ROOT_PATH:-/var/edge-sync-service/trace}
 export CSS_MONGO_AUTH_DB_NAME=${CSS_MONGO_AUTH_DB_NAME:-admin}
 export HZN_FSS_CSSURL=${HZN_FSS_CSSURL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$CSS_PORT}
 
+export POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-scram-sha-256}
 export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
 export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-13}   # or can be set to stable or a specific version
 export POSTGRES_PORT=${POSTGRES_PORT:-5432}
@@ -1457,13 +1459,16 @@ if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-
     echo -e "\n    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
     echo "    Authentication to the Exchange is in the format <organization>/<identity>:<password> or \$HZN_ORG_ID/\$HZN_EXCHANGE_USER_AUTH."
 fi
+echo "  3. Installed and configured a PostgreSQL database instance for the Exchange. Important: save the generated user password in a safe place."
+echo "       export POSTGRES_USER=$POSTGRES_USER"
+echo "       export EXCHANGE_DB_PW=$EXCHANGE_DB_PW"
 if [[ -z $OH_NO_AGENT ]]; then
-    echo "  3. Installed and configured the Horizon agent and CLI (hzn)"
+    echo "  4. Installed and configured the Horizon agent and CLI (hzn)"
 else   # only cli
-    echo "  3. Installed and configured the Horizon CLI (hzn)"
+    echo "  4. Installed and configured the Horizon CLI (hzn)"
 fi
-echo "  4. Created a Horizon developer key pair"
-nextNum='5'
+echo "  5. Created a Horizon developer key pair"
+nextNum='6'
 if [[ -z $OH_NO_EXAMPLES ]]; then
     echo "  $nextNum. Installed the Horizon examples"
     nextNum=$((nextNum+1))
@@ -1482,6 +1487,10 @@ echo "  $nextNum. Created a FDO Owner Service instance."
 echo "    Run test-fdo.sh to simulate the transfer of a device and automatic workload provisioning."
 echo "    FDO Owner Service on port $FDO_OWN_SVC_PORT API credentials:"
 echo "      export FDO_OWN_SVC_AUTH=$FDO_OWN_SVC_AUTH"
+nextNum=$((nextNum+1))
+echo "  $nextNum. Created and configured a PostgreSQL database instance for the FDO Owner Service. Important: save the generated user password in a safe place."
+echo "        export FDO_OWN_SVC_DB_USER=$FDO_OWN_SVC_DB_USER"
+echo "        export FDO_OWN_SVC_DB_PASSWORD=$FDO_OWN_SVC_DB_PASSWORD"
 nextNum=$((nextNum+1))
 echo -e "\n  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then

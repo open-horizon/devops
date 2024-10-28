@@ -1,3 +1,5 @@
+SyntaxError: JSON.parse: unexpected character at line 16 column 30 of the JSON data
+
 {
     "AgreementBot": {
         "DBPath": "",
@@ -5,7 +7,7 @@
             "Host": "postgres",
             "Port": "${POSTGRES_PORT}",
             "User": "${POSTGRES_USER}",
-            "Password": "",
+            "Password": "${EXCHANGE_DB_PW}",
             "DBName": "${AGBOT_DATABASE}",
             "SSLMode": "disable",
             "MaxOpenConnections": 20
