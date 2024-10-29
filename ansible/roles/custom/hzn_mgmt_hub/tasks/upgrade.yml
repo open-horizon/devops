@@ -1,0 +1,21 @@
+
+- name: Stop containers
+  ansible.builtin.shell:
+    executable: /bin/bash 
+    cmd: |-
+      source administrator.env
+      ./deploy-mgmt-hub.sh -c agent-install.cfg -S
+
+- name: Upgrade stopped containers
+  ansible.builtin.shell:
+    executable: /bin/bash 
+    cmd: |-
+      source administrator.env
+      ./deploy-mgmt-hub.sh -c agent-install.cfg -u
+
+- name: Start containers
+  ansible.builtin.shell: 
+    executable: /bin/bash 
+    cmd: |-
+      source administrator.env
+      ./deploy-mgmt-hub.sh -c agent-install.cfg -s

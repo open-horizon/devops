@@ -41,13 +41,19 @@ endif
 dependencies: check_for_ansible
 	ansible-galaxy install $(ANSIBLE_GALAXY_ARGS)
 
-# Install the playbook.
+# Install the management hub.
 install: dependencies
 	$(eval ANSIBLE_PLAY_ARGS +=-e "install=true")
 	ansible-playbook $(ANSIBLE_PLAY_ARGS) mgmt_hub.yml
 
+# Uninstall the management hub (this is a destructive operation)
 uninstall: dependencies
 	$(eval ANSIBLE_PLAY_ARGS +=-e "uninstall=true")
+	ansible-playbook $(ANSIBLE_PLAY_ARGS) mgmt_hub.yml
+
+# Upgrade the management hub's containers
+upgrade: dependencies
+	$(eval ANSIBLE_PLAY_ARGS +=-e "upgrade=true")
 	ansible-playbook $(ANSIBLE_PLAY_ARGS) mgmt_hub.yml
 
 # Sync an existing deployment.

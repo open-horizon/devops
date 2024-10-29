@@ -2,10 +2,12 @@
 
 # This is a default vars file based off of the behavior of the original installer script.
 
-# Set this variable to the absolute path of a local configuration file.
+# Set this variable to the path of your local agent-install.cfg
 # It will be copied onto the remote system, and then loaded into the Ansible SSH session env.
-# Accomplished using this: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html
-agent_install: test.env
+agent_install: null
+
+# Set this variable to the path 
+administrator_env: null
 
 # If true, exports this config with populated secrets using the imported vault secret.
 export_data: false
@@ -16,6 +18,9 @@ uninstall: false
 
 # If true, installs the management hub.
 install: false
+
+# If true, upgrades the management hub.
+upgrade: false
 
 # This is an additional place to define the configuration for the management hub.
 # If fields are not given, then the playbook will generate defaults.
@@ -75,3 +80,5 @@ hzn_mgmt_hub:
     net:  {}
 
   agbot2: {}
+  oh:
+    config: {}
