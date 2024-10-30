@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2024-10-28
+- Removed auth method trust from PostgreSQL containers.
+- Added user passwords to PostgreSQL containers.
+- Added scram_sha_256 cryptographic hashing to PostgreSQL containers for user passwords.
+
 ## [] - 2024-01-16
 - Issue 156: Updated FDO components to version 1.1.7
 
