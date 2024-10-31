@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2024-10-31
+- Issue-186: Removed erroneous lines from agbot-tmpl.json.
+
 ## [] - 2024-10-28
 - Removed auth method trust from PostgreSQL containers.
 - Added user passwords to PostgreSQL containers.

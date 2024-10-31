@@ -1,5 +1,3 @@
-SyntaxError: JSON.parse: unexpected character at line 16 column 30 of the JSON data
-
 {
     "AgreementBot": {
         "DBPath": "",
