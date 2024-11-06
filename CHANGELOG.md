@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2024-10-31
+- Issue-186: Removed erroneous lines from agbot-tmpl.json.
+
+## [] - 2024-10-28
+- Removed auth method trust from PostgreSQL containers.
+- Added user passwords to PostgreSQL containers.
+- Added scram_sha_256 cryptographic hashing to PostgreSQL containers for user passwords.
+
 ## [] - 2024-04-11
 - Issue: 167: Changes Vault references to OpenBao.
 

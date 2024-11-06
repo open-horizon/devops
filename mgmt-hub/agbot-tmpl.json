@@ -5,7 +5,7 @@
             "Host": "postgres",
             "Port": "${POSTGRES_PORT}",
             "User": "${POSTGRES_USER}",
-            "Password": "",
+            "Password": "${EXCHANGE_DB_PW}",
             "DBName": "${AGBOT_DATABASE}",
             "SSLMode": "disable",
             "MaxOpenConnections": 20

@@ -107,7 +107,7 @@ if [[ -z "$EXCHANGE_ROOT_PW" ]];then
 fi
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }   # inspired by https://gist.github.com/earthgecko/3089509#gistcomment-3530978
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
-export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must default to the clear pw when they do not specify it
+export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must default to the clear pw when they do not specify it. [DEPRECATED] in v2.124.0+
 
 # the passwords of the admin user in the system org and of the hub admin. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_SYSTEM_ADMIN_PW" ]]; then
@@ -138,6 +138,7 @@ export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub
 # You can also set HZN_LISTEN_PUBLIC_IP to the public IP if you want to set HZN_LISTEN_IP=0.0.0.0 but this script can't determine the public IP.
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}   # Note: setting this to https is experimental, still under development!!!!!!
 
+export EXCHANGE_DB_PW=${EXCHANGE_DB_PW:-$(generateToken 30)}
 export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-openhorizon/${ARCH}_exchange-api}
 export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-testing}   # or can be set to stable or a specific version
 export EXCHANGE_PORT=${EXCHANGE_PORT:-3090}
@@ -188,6 +189,7 @@ export CSS_TRACE_ROOT_PATH=${CSS_TRACE_ROOT_PATH:-/var/edge-sync-service/trace}
 export CSS_MONGO_AUTH_DB_NAME=${CSS_MONGO_AUTH_DB_NAME:-admin}
 export HZN_FSS_CSSURL=${HZN_FSS_CSSURL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$CSS_PORT}
 
+export POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-scram-sha-256}
 export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
 export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-13}   # or can be set to stable or a specific version
 export POSTGRES_PORT=${POSTGRES_PORT:-5432}
@@ -954,9 +956,12 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
     export SECURE_API_SERVER_KEY="/home/agbotuser/keys/${CERT_BASE_NAME}.key"
     export SECURE_API_SERVER_CERT="/home/agbotuser/keys/${CERT_BASE_NAME}.crt"
 
-    export EXCHANGE_HTTP_PORT=8081   #todo: change this back to null when https://github.com/open-horizon/anax/issues/2628 is fixed. Just for CSS.
-    export EXCHANGE_HTTPS_PORT=8080   # the internal port it listens on
+    export EXCHANGE_HTTP_PORT=8081   #todo: change this back to null when https://github.com/open-horizon/anax/issues/2628 is fixed. Just for CSS. [DEPRECATED] in v2.124.0+
+    export EXCHANGE_PEKKO_HTTP_PORT=8081
+    export EXCHANGE_HTTPS_PORT=8080   # the internal port it listens on. [DEPRECATED] in v2.124.0+
+    export EXCHANGE_PEKKO_HTTPS_PORT=8080
     export EXCHANGE_TRUST_STORE_PATH=\"/etc/horizon/exchange/keys/${EXCHANGE_TRUST_STORE_FILE}\"   # the exchange container's internal path
+    export EXCHANGE_TLS_TRUSTSTORE=${EXCHANGE_TRUST_STORE_PATH}
     EXCH_CERT_ARG="--cacert $CERT_DIR/$CERT_BASE_NAME.crt"   # for use when this script is calling the exchange
 
     export CSS_LISTENING_TYPE=secure
@@ -966,7 +971,8 @@ else
     removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
     export CSS_LISTENING_TYPE=unsecure
 
-    export EXCHANGE_HTTP_PORT=8080   # the internal port it listens on
+    export EXCHANGE_HTTP_PORT=8080   # the internal port it listens on. [DEPRECATED] in v2.124.0+
+    export EXCHANGE_PEKKO_HTTPS_PORT=8083
     export EXCHANGE_HTTPS_PORT=null
     export EXCHANGE_TRUST_STORE_PATH=null
 
@@ -982,7 +988,7 @@ export EXCHANGE_INTERNAL_CERT=${HZN_MGMT_HUB_CERT:-N/A}
 printf "${CYAN}------- Downloading template files...${NC}\n"
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json # [DEPRECATED] in v2.124.0+
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/bao-tmpl.json $TMP_DIR/bao-tmpl.json
@@ -1001,7 +1007,7 @@ chmod +x test-fdo.sh
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
 mkdir -p /etc/horizon   # putting the config files here because they are mounted long-term into the containers
-cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json
+cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json # [DEPRECATED] in v2.124.0+
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
 export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
@@ -1455,13 +1461,16 @@ if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-
     echo -e "\n    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
     echo "    Authentication to the Exchange is in the format <organization>/<identity>:<password> or \$HZN_ORG_ID/\$HZN_EXCHANGE_USER_AUTH."
 fi
+echo "  3. Installed and configured a PostgreSQL database instance for the Exchange. Important: save the generated user password in a safe place."
+echo "       export POSTGRES_USER=$POSTGRES_USER"
+echo "       export EXCHANGE_DB_PW=$EXCHANGE_DB_PW"
 if [[ -z $OH_NO_AGENT ]]; then
-    echo "  3. Installed and configured the Horizon agent and CLI (hzn)"
+    echo "  4. Installed and configured the Horizon agent and CLI (hzn)"
 else   # only cli
-    echo "  3. Installed and configured the Horizon CLI (hzn)"
+    echo "  4. Installed and configured the Horizon CLI (hzn)"
 fi
-echo "  4. Created a Horizon developer key pair"
-nextNum='5'
+echo "  5. Created a Horizon developer key pair"
+nextNum='6'
 if [[ -z $OH_NO_EXAMPLES ]]; then
     echo "  $nextNum. Installed the Horizon examples"
     nextNum=$((nextNum+1))
@@ -1480,6 +1489,10 @@ echo "  $nextNum. Created a FDO Owner Service instance."
 echo "    Run test-fdo.sh to simulate the transfer of a device and automatic workload provisioning."
 echo "    FDO Owner Service on port $FDO_OWN_SVC_PORT API credentials:"
 echo "      export FDO_OWN_SVC_AUTH=$FDO_OWN_SVC_AUTH"
+nextNum=$((nextNum+1))
+echo "  $nextNum. Created and configured a PostgreSQL database instance for the FDO Owner Service. Important: save the generated user password in a safe place."
+echo "        export FDO_OWN_SVC_DB_USER=$FDO_OWN_SVC_DB_USER"
+echo "        export FDO_OWN_SVC_DB_PASSWORD=$FDO_OWN_SVC_DB_PASSWORD"
 nextNum=$((nextNum+1))
 echo -e "\n  $nextNum. Added the hzn auto-completion file to ~/.${SHELL##*/}rc (but you need to source that again for it to take effect in this shell session)"
 if isMacOS && ! isDirInPath '/usr/local/bin'; then
