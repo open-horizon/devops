@@ -226,25 +226,31 @@ export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
 
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
-export VAULT_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
-export VAULT_PORT=${VAULT_PORT:-8200}
-export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${VAULT_PORT}}
-export VAULT_DISABLE_TLS=true
-# Todo: Future suuport for TLS/HTTPS with Vault
+export BAO_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
+export BAO_PORT=${BAO_PORT:-8200}
+export BAO_PORT_CLUSTER=${BAO_PORT_CLUSTER:-8201}
+export BAO_DISABLE_TLS=true
+# Todo: Future suuport for TLS/HTTPS with Bao
 #if [[ ${HZN_TRANSPORT} == https ]]; then
-#    VAULT_DISABLE_TLS=false
+#    BAO_DISABLE_TLS=false
 #else
-#    VAULT_DISABLE_TLS=true
+#    BAO_DISABLE_TLS=true
 #fi
+export BAO_API_ADDR=${BAO_API_ADDR:-${HZN_TRANSPORT}://0.0.0.0:${BAO_PORT}}
+export BAO_CLUSTER_ADDR=${BAO_CLUSTER_ADDR:-${HZN_TRANSPORT}://0.0.0.0:${BAO_PORT_CLUSTER}}
+export BAO_IMAGE_NAME=${BAO_IMAGE_NAME:-quay.io/openbao/openbao-ubi}
+export BAO_IMAGE_TAG=${BAO_IMAGE_TAG:-2.0}
+export BAO_LOG_LEVEL=${BAO_LOG_LEVEL:-info}
+export BAO_ROOT_TOKEN=${BAO_ROOT_TOKEN:-}
+export BAO_SEAL_SECRET_SHARES=1                                                   # Number of keys that exist that are capabale of being used to unseal the bao instance. 0 < shares >= threshold
+export BAO_SEAL_SECRET_THRESHOLD=1                                                # Number of keys needed to unseal the bao instance. threshold <= shares > 0
+export BAO_SECRETS_ENGINE_NAME=openhorizon
+export BAO_UNSEAL_KEY=${BAO_UNSEAL_KEY:-}
+export HZN_BAO_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${BAO_PORT}
+export OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION=${OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION:-0.1.0-test}
 export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-openhorizon/${ARCH}_vault}
 export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
-export HZN_VAULT_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${VAULT_PORT}
-export VAULT_LOG_LEVEL=${VAULT_LOG_LEVEL:-info}
-export VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN:-}
-export VAULT_SEAL_SECRET_SHARES=1                                                   # Number of keys that exist that are capabale of being used to unseal the vault instance. 0 < shares >= threshold
-export VAULT_SEAL_SECRET_THRESHOLD=1                                                # Number of keys needed to unseal the vault instance. threshold <= shares > 0
-export VAULT_SECRETS_ENGINE_NAME=openhorizon
-export VAULT_UNSEAL_KEY=${VAULT_UNSEAL_KEY:-}
+
 
 export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
 export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
@@ -268,11 +274,11 @@ TMP_DIR=/tmp/horizon-all-in-1
 mkdir -p $TMP_DIR
 CURL_OUTPUT_FILE=$TMP_DIR/curlExchangeOutput
 CURL_ERROR_FILE=$TMP_DIR/curlExchangeErrors
-VAULT_ERROR_FILE=$TMP_DIR/curlVaultError
-VAULT_KEYS_FILE=$TMP_DIR/vaultkeys.json
-VAULT_OUTPUT_FILE=$TMP_DIR/curlVaultOutput
-VAULT_PLUGIN_FILE=$TMP_DIR/curlVaultPlugin
-VAULT_STATUS_FILE=$TMP_DIR/curlVaultStatus
+BAO_ERROR_FILE=$TMP_DIR/curlBaoError
+BAO_KEYS_FILE=$TMP_DIR/baokeys.json
+BAO_OUTPUT_FILE=$TMP_DIR/curlBaoOutput
+BAO_PLUGIN_FILE=$TMP_DIR/curlBaoPlugin
+BAO_STATUS_FILE=$TMP_DIR/curlBaoStatus
 SYSTEM_TYPE=${SYSTEM_TYPE:-$(uname -s)}
 DISTRO=${DISTRO:-$(. /etc/os-release 2>/dev/null;echo $ID $VERSION_ID)}
 IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'   # use it like: if [[ $host =~ $IP_REGEX ]]
@@ -377,7 +383,7 @@ isUbuntu18() {
 }
 
 isUbuntu2x() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-4]\.* ]]; then
+    if [[ "$DISTRO" =~ ubuntu\ 2[0-9]\.* ]]; then
 		return 0
 	else
 		return 1
@@ -522,7 +528,7 @@ pullImages() {
     pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
     pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
     pullDockerImage ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
-    pullDockerImage ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+    pullDockerImage ${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG}
 }
 
 # Find 1 of the private IPs of the host - not currently used
@@ -685,115 +691,134 @@ createKeyAndCertFDO() {   # create in directory $CERT_DIR a certificate named: $
     #todo: should we do this so local curl cmds will use it: ln -s $CERT_DIR/$CERT_BASE_NAME_FDO.crt /etc/ssl/certs
 }
 
-# ----- Vault functions -----
-vaultAuthMethodCheck() {
-    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME/$VAULT_AUTH_PLUGIN_EXCHANGE/tune $* 2>$VAULT_ERROR_FILE
+# ----- Bao functions -----
+baoAuthMethodCheck() {
+    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME/$BAO_AUTH_PLUGIN_EXCHANGE/tune $* 2>$BAO_ERROR_FILE
 }
 
-vaultCreateSecretsEngine() {
-    echo Creating KV ver.2 secrets engine $VAULT_SECRETS_ENGINE_NAME...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$VAULT_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 204 "vaultCreateSecretsEngine" $VAULT_ERROR_FILE
+baoCreateSecretsEngine() {
+    echo Creating KV ver.2 secrets engine $BAO_SECRETS_ENGINE_NAME...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$BAO_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_BAO_URL/v1/sys/mounts/$BAO_SECRETS_ENGINE_NAME $* 2>$BAO_ERROR_FILE)
+    chkHttp $? $httpCode 204 "baoCreateSecretsEngine" $BAO_ERROR_FILE
 }
 
-vaultEnableAuthMethod() {
-    echo Enabling auth method $VAULT_AUTH_PLUGIN_EXCHANGE for secrets engine $VAULT_SECRETS_ENGINE_NAME...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$VAULT_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$VAULT_AUTH_PLUGIN_EXCHANGE\"}" $HZN_VAULT_URL/v1/sys/auth/$VAULT_SECRETS_ENGINE_NAME)
-    chkHttp $? $httpCode 204 "vaultEnableAuthMethod" $VAULT_ERROR_FILE
+baoDownloadAuthOHPlugin() {
+  if isFedora || isRedHat8 || isUbuntu18 || isUbuntu2x; then
+    os=linux
+  elif isMacOS; then
+    os=darwin
+  fi
+  if [[ "${ARCH}" == "amd64" ]]; then
+    arch=x86_64
+  elif [[ "${ARCH}" == "arm" ]]; then
+    arch=armv6
+  elif [[ "${ARCH}" == "arm64" ]]; then
+    arch=arm64v8.0
+  fi
+
+  getUrlFile https://github.com/naphelps/openbao-plugin-auth-openhorizon/releases/download/v"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"/openbao-plugin-auth-openhorizon_"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"_"$os"_"$arch".tar.gz "$TMP_DIR"/openbao-plugin-auth-openhorizon.tar.gz
+  mkdir -p $TMP_DIR/openbao/plugins
+  tar -zxf $TMP_DIR/openbao-plugin-auth-openhorizon.tar.gz -C $TMP_DIR/openbao/plugins
 }
 
-vaultPluginCheck() {
-    curl -sS -w "%{http_code}" -o $VAULT_PLUGIN_FILE -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE
+baoEnableAuthMethod() {
+    echo Enabling auth method $BAO_AUTH_PLUGIN_EXCHANGE for secrets engine $BAO_SECRETS_ENGINE_NAME...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$BAO_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$BAO_AUTH_PLUGIN_EXCHANGE\"}" $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME)
+    chkHttp $? $httpCode 204 "baoEnableAuthMethod" $BAO_ERROR_FILE
 }
 
-vaultPluginHash() {
-    echo Generating SHA256 hash of $VAULT_AUTH_PLUGIN_EXCHANGE plugin...
+baoPluginCheck() {
+    curl -sS -w "%{http_code}" -o $BAO_PLUGIN_FILE -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE
+}
+
+baoPluginHash() {
+    echo Generating SHA256 hash of $BAO_AUTH_PLUGIN_EXCHANGE plugin...
     # Note: must redirect stdin to /dev/null, otherwise when this script is being piped into bash the following cmd will gobble the rest of this script and execution will end abruptly
-    hash=$($DOCKER_COMPOSE_CMD exec -T vault sha256sum /vault/plugins/hznvaultauth </dev/null | cut -d " " -f1)
+    hash=$($DOCKER_COMPOSE_CMD exec -T bao sha256sum /openbao/plugins/openbao-plugin-auth-openhorizon </dev/null | cut -d " " -f1)
 }
 
-vaultRegisterPlugin() {
+baoRegisterPlugin() {
     local hash=
-    echo Registering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE to Vault instance...
-    vaultPluginHash
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"hznvaultauth\"}" $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 204 "vaultRegisterPlugin" $VAULT_ERROR_FILE
+    echo Registering auth plugin $BAO_AUTH_PLUGIN_EXCHANGE to Bao instance...
+    baoPluginHash
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"openbao-plugin-auth-openhorizon\", \"version\": \"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
+    chkHttp $? $httpCode 204 "baoRegisterPlugin" $BAO_ERROR_FILE
 }
 
-vaultSecretsEngineCheck() {
-    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/mounts/$VAULT_SECRETS_ENGINE_NAME $* 2>$VAULT_ERROR_FILE
+baoSecretsEngineCheck() {
+    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/mounts/$BAO_SECRETS_ENGINE_NAME $* 2>$BAO_ERROR_FILE
 }
 
-vaultServiceCheck() {
-    echo Checking Vault service status, initialization, and seal...
-    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_STATUS_FILE -H Content-Type:application/json -X GET $HZN_VAULT_URL/v1/sys/seal-status $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 200 "vaultServiceCheck" $VAULT_ERROR_FILE
+baoServiceCheck() {
+    echo Checking Bao service status, initialization, and seal...
+    httpCode=$(curl -sS -w "%{http_code}" -o $BAO_STATUS_FILE -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/seal-status $* 2>$BAO_ERROR_FILE)
+    chkHttp $? $httpCode 200 "baoServiceCheck" $BAO_ERROR_FILE
 }
 
-vaultUnregisterPlugin() {
-    echo Unregistering auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE from Vault instance...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $VAULT_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_VAULT_URL/v1/sys/plugins/catalog/auth/$VAULT_AUTH_PLUGIN_EXCHANGE $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 204 "vaultUnregisterPlugin" $VAULT_ERROR_FILE
+baoUnregisterPlugin() {
+    echo Unregistering auth plugin $BAO_AUTH_PLUGIN_EXCHANGE from Bao instance...
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
+    chkHttp $? $httpCode 204 "baoUnregisterPlugin" $BAO_ERROR_FILE
 }
 
 # Assumes a secret threshold size of 1
-vaultUnseal() {
-    echo Vault instance is sealed. Unsealing...
-    httpCode=$(curl -sS -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$VAULT_UNSEAL_KEY\"}" $HZN_VAULT_URL/v1/sys/unseal $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 200 "vaultUnseal" $VAULT_ERROR_FILE
+baoUnseal() {
+    echo Bao instance is sealed. Unsealing...
+    httpCode=$(curl -sS -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$BAO_UNSEAL_KEY\"}" $HZN_BAO_URL/v1/sys/unseal $* 2>$BAO_ERROR_FILE)
+    chkHttp $? $httpCode 200 "baoUnseal" $BAO_ERROR_FILE
 }
 
-vaultInitialize() {
-    echo A Vault instance has not been initialized. Initializing...
-    httpCode=$(curl -sS -w "%{http_code}" -o $VAULT_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $VAULT_SEAL_SECRET_SHARES,\"secret_threshold\": $VAULT_SEAL_SECRET_THRESHOLD}" $HZN_VAULT_URL/v1/sys/init $* 2>$VAULT_ERROR_FILE)
-    chkHttp $? $httpCode 200 "vaultInitialize" $VAULT_ERROR_FILE
-    VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
-    VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
-    vaultUnseal
-    vaultCreateSecretsEngine
-    vaultRegisterPlugin
-    vaultEnableAuthMethod
+baoInitialize() {
+    echo A Bao instance has not been initialized. Initializing...
+    httpCode=$(curl -sS -w "%{http_code}" -o $BAO_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $BAO_SEAL_SECRET_SHARES,\"secret_threshold\": $BAO_SEAL_SECRET_THRESHOLD}" $HZN_BAO_URL/v1/sys/init $* 2>$BAO_ERROR_FILE)
+    chkHttp $? $httpCode 200 "baoInitialize" $BAO_ERROR_FILE
+    BAO_ROOT_TOKEN=$(cat $BAO_KEYS_FILE | jq -r '.root_token')
+    BAO_UNSEAL_KEY=$(cat $BAO_KEYS_FILE | jq -r '.keys_base64[0]')
+    baoUnseal
+    baoCreateSecretsEngine
+    baoRegisterPlugin
+    baoEnableAuthMethod
 }
 
-vaultVaildation() {
-    echo Found a Vault instance.
+baoVaildation() {
+    echo Found a Bao instance.
     # TODO: Regenerated root user's token
-    #if [[ -z $VAULT_ROOT_TOKEN ]]; then
-    #    VAULT_ROOT_TOKEN=$(cat $VAULT_KEYS_FILE | jq -r '.root_token')
-    #elif [[ -n $VAULT_ROOT_TOKEN ]] && [[ $VAULT_ROOT_TOKEN != $(cat $VAULT_KEYS_FILE | jq -r '.root_token') ]]; then
-    #    jq -a $VAULT_ROOT_TOKEN '.root_token=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
+    #if [[ -z $BAO_ROOT_TOKEN ]]; then
+    #    BAO_ROOT_TOKEN=$(cat $BAO_KEYS_FILE | jq -r '.root_token')
+    #elif [[ -n $BAO_ROOT_TOKEN ]] && [[ $BAO_ROOT_TOKEN != $(cat $BAO_KEYS_FILE | jq -r '.root_token') ]]; then
+    #    jq -a $BAO_ROOT_TOKEN '.root_token=$BAO_ROOT_TOKEN' < $BAO_KEYS_FILE > $BAO_KEYS_FILE
     #fi
 
-    # TODO: Rekeyed the seal of the vault instance
+    # TODO: Rekeyed the seal of the bao instance
     # Will only work if seal was rekeyed to a secret threshold size of 1
-    #if [[ -z $VAULT_UNSEAL_KEY ]]; then
-    #    VAULT_UNSEAL_KEY=$(cat $VAULT_KEYS_FILE | jq -r '.keys_base64[0]')
-    #elif [[ -n $VAULT_UNSEAL_KEY ]] && [[ $VAULT_UNSEAL_KEY != $(cat $VAULT_KEYS_FILE | jq -r 'keys_base64[0]') ]]; then
-    #    jq -a $VAULT_UNSEAL_KEY 'keys_base64[0]=$VAULT_ROOT_TOKEN' < $VAULT_KEYS_FILE > $VAULT_KEYS_FILE
+    #if [[ -z $BAO_UNSEAL_KEY ]]; then
+    #    BAO_UNSEAL_KEY=$(cat $BAO_KEYS_FILE | jq -r '.keys_base64[0]')
+    #elif [[ -n $BAO_UNSEAL_KEY ]] && [[ $BAO_UNSEAL_KEY != $(cat $BAO_KEYS_FILE | jq -r 'keys_base64[0]') ]]; then
+    #    jq -a $BAO_UNSEAL_KEY 'keys_base64[0]=$BAO_ROOT_TOKEN' < $BAO_KEYS_FILE > $BAO_KEYS_FILE
     #fi
 
-    if [[ $(cat $VAULT_STATUS_FILE | jq '.sealed') == true ]]; then
-        vaultUnseal
+    if [[ $(cat $BAO_STATUS_FILE | jq '.sealed') == true ]]; then
+        baoUnseal
     fi
 
-    if [[ $(vaultSecretsEngineCheck) == 404 ]]; then
-      vaultCreateSecretsEngine
-      vaultRegisterPlugin
-      vaultEnableAuthMethod
-    elif [[ $(vaultPluginCheck) == 404 ]]; then
-      vaultRegisterPlugin
-      vaultEnableAuthMethod
-    elif [[ $(vaultAuthMethodCheck) == 400 ]]; then
-      vaultEnableAuthMethod
+    if [[ $(baoSecretsEngineCheck) == 404 ]]; then
+      baoCreateSecretsEngine
+      baoRegisterPlugin
+      baoEnableAuthMethod
+    elif [[ $(baoPluginCheck) == 404 ]]; then
+      baoRegisterPlugin
+      baoEnableAuthMethod
+    elif [[ $(baoAuthMethodCheck) == 400 ]]; then
+      baoEnableAuthMethod
     else
         # New Exchange auth plugin
-        vaultPluginHash
-        if [[ $hash != $(cat $VAULT_PLUGIN_FILE | jq -r '.data.sha256') ]]; then
-            echo Found new auth plugin $VAULT_AUTH_PLUGIN_EXCHANGE
-            vaultUnregisterPlugin
-            vaultRegisterPlugin
+        baoPluginHash
+        if [[ $hash != $(cat $BAO_PLUGIN_FILE | jq -r '.data.sha256') ]]; then
+            echo Found new auth plugin $BAO_AUTH_PLUGIN_EXCHANGE
+            baoUnregisterPlugin
+            baoRegisterPlugin
             # TODO: Not sure if the auth method needs to be cycled if the plugin has been cycled
-            #vaultEnableAuthMethod
+            #baoEnableAuthMethod
         fi
     fi
 }
@@ -812,8 +837,8 @@ else   # ubuntu and redhat
 fi
 
 # TODO: Future directory for TLS certificates and keys.
-#export VAULT_INSTANCE_DIR=${ETC}/vault/file
-#export VAULT_KEYS_DIR=${ETC}/vault/keys
+#export BAO_INSTANCE_DIR=${ETC}/vault/file
+#export BAO_KEYS_DIR=${ETC}/vault/keys
 
 
 # Set OS-dependent package manager settings in Linux
@@ -989,7 +1014,7 @@ getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agb
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json # [DEPRECATED] in v2.124.0+
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
 getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/vault-tmpl.json $TMP_DIR/vault-tmpl.json
+getUrlFile $OH_DEVOPS_REPO/mgmt-hub/bao-tmpl.json $TMP_DIR/bao-tmpl.json
 # Leave a copy of ourself in the current dir for subsequent stop/start commands.
 # If they are running us via ./deploy-mgmt-hub.sh we can't overwrite ourselves (or we get syntax errors), so only do it if we are piped into bash or for some other reason aren't executing the script from the current dir
 if [[ $0 == 'bash' || ! -f deploy-mgmt-hub.sh ]]; then
@@ -1008,7 +1033,8 @@ mkdir -p /etc/horizon   # putting the config files here because they are mounted
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json # [DEPRECATED] in v2.124.0+
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
-export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/vault-tmpl.json | envsubst)
+export BAO_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
+baoDownloadAuthOHPlugin
 
 #====================== Start/Stop/Restart/Update ======================
 # Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
@@ -1066,24 +1092,24 @@ if [[ -n "$STOP" ]]; then
 
     if [[ -n "$PURGE" ]]; then
         removeKeyAndCert
-        # TODO: Future directories for vault
-        #if [[ -d ${ETC}/vault ]]; then
-          # Remove Vault instance
-          #rm -dfr ${ETC}/vault
+        # TODO: Future directories for bao
+        #if [[ -d ${ETC}/bao ]]; then
+          # Remove Bao instance
+          #rm -dfr ${ETC}/bao
         #fi
     fi
 
     if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
         echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG} ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
     exit
 fi
 
-# TODO: Future directories for Vault.
-#mkdir -p ${VAULT_INSTANCE_DIR}
-#chown -R 1001 ${VAULT_INSTANCE_DIR}
-#mkdir -p ${VAULT_KEYS_DIR}
+# TODO: Future directories for Bao.
+#mkdir -p ${BAO_INSTANCE_DIR}
+#chown -R 1001 ${BAO_INSTANCE_DIR}
+#mkdir -p ${BAO_KEYS_DIR}
 
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
@@ -1196,20 +1222,20 @@ else
     chkHttp $? $httpCode 201 "changing pw of /orgs/$EXCHANGE_SYSTEM_ORG/users/admin" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 fi
 
-printf "${CYAN}------- Creating a Vault instance and performing all setup and configuration operations ...${NC}\n"
+printf "${CYAN}------- Creating a Bao instance and performing all setup and configuration operations ...${NC}\n"
 # TODO: Implement HTTPS support
 if [[ $HZN_TRANSPORT == http ]]; then
-    vaultServiceCheck
-    if [[ $(cat $VAULT_STATUS_FILE | jq '.initialized') == false ]]; then
-        vaultInitialize
+    baoServiceCheck
+    if [[ $(cat $BAO_STATUS_FILE | jq '.initialized') == false ]]; then
+        baoInitialize
     else
-        vaultVaildation
+        baoVaildation
     fi
 
     # Cannot read custom configuration keys/values. Assume either its never been set, or it has changed every time.
-    echo Configuring auth method $VAULT_AUTH_PLUGIN_EXCHANGE for use with the Exchange...
+    echo Configuring auth method $BAO_AUTH_PLUGIN_EXCHANGE for use with the Exchange...
     # Note: must redirect stdin to /dev/null, otherwise when this script is being piped into bash the following cmd will gobble the rest of this script and execution will end abruptly
-    ${DOCKER_COMPOSE_CMD} exec -T -e VAULT_TOKEN=$VAULT_ROOT_TOKEN vault vault write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$VAULT_ROOT_TOKEN </dev/null
+    ${DOCKER_COMPOSE_CMD} exec -T -e BAO_TOKEN=$BAO_ROOT_TOKEN bao bao write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$BAO_ROOT_TOKEN </dev/null
 fi
 
 printf "${CYAN}------- Creating an agbot in the exchange...${NC}\n"
@@ -1227,8 +1253,8 @@ httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"busin
 chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 
 
-# Vault needs the Agbot to restart everytime there is a setup or configuration change.
-# Agbot will enter non-secrets mode if Vault is not working.
+# Bao needs the Agbot to restart everytime there is a setup or configuration change.
+# Agbot will enter non-secrets mode if Bao is not working.
 ${DOCKER_COMPOSE_CMD} restart -t 10 agbot   # docker-compose will print that it is restarting the agbot
 chk $? 'restarting agbot service'
 
@@ -1421,7 +1447,7 @@ fi
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
-echo "  1. Started Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, Postgres DB, Postgres DB FDO, Vault"
+echo "  1. Started Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, Postgres DB, Postgres DB FDO, Bao"
 echo "  2. Created exchange resources: system organization (${EXCHANGE_SYSTEM_ORG}) admin user, user organization (${EXCHANGE_USER_ORG}) and admin user, and agbot"
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "    Automatically generated these passwords/tokens:"
@@ -1477,10 +1503,10 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     echo "  $nextNum. Created and registered an edge node to run the helloworld example edge service"
     nextNum=$((nextNum+1))
 fi
-echo "  $nextNum. Created a vault instance: $HZN_VAULT_URL/ui/vault/auth?with=token"
+echo "  $nextNum. Created a bao instance: $HZN_BAO_URL/v1/sys/seal-status" # $HZN_BAO_URL/ui/bao/auth?with=token UI not available in Bao 2.x
 echo "    Automatically generated this key/token:"
-echo "      export VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY"
-echo "      export VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN"
+echo "      export BAO_UNSEAL_KEY=$BAO_UNSEAL_KEY"
+echo "      export BAO_ROOT_TOKEN=$BAO_ROOT_TOKEN"
 echo -e "\n    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
 nextNum=$((nextNum+1))
 echo "  $nextNum. Created a FDO Owner Service instance."

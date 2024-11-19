@@ -7,7 +7,8 @@ volumes:
   mongovol:
   agbotmsgkeyvol:
   fdo-ocs-db:
-  vaultvol:
+  bao-vol:
+  bao-logs-vol:
 
 networks:
   horizonnet:
@@ -45,7 +46,7 @@ services:
       - exchange-api
       - css-api
       - postgres-exchange
-      - vault
+      - bao
 
   exchange-api:
     image:  ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
@@ -232,24 +233,27 @@ services:
       timeout: 5s
       retries: 3
 
-  vault:
-    image: ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
-    container_name: vault
+  bao:
+    image: ${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG}
+    container_name: bao
     restart: always
     ports:
-      - ${HZN_LISTEN_IP}:${VAULT_PORT}:${VAULT_PORT}
+      - ${HZN_LISTEN_IP}:${BAO_PORT}:${BAO_PORT}
     networks:
       - horizonnet
     volumes:
-      - vaultvol:/vault/file
+      - bao-vol:/openbao/file
+      - bao-logs-vol:/openbao/logs
+      - /tmp/horizon-all-in-1/openbao/plugins/openbao-plugin-auth-openhorizon:/openbao/plugins/openbao-plugin-auth-openhorizon:ro
     environment:
-      # This is sudo redundent and is here for the purposes of preventing production scripts from running when starting a container.
+      # This is sudo redundant and is here for the purposes of preventing production scripts from running when starting a container.
       # The environment variable does take precedence over the configuration file (listener.tcp.address).
-      - VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS}
-      - VAULT_LOCAL_CONFIG=$VAULT_LOCAL_CONFIG
+      - BAO_LOG_LEVEL=${BAO_LOG_LEVEL}
+      - BAO_API_ADDR=${BAO_API_ADDR}
+      - BAO_LOCAL_CONFIG=${BAO_LOCAL_CONFIG}
     command: ["server"]
     healthcheck:
-      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${VAULT_DEV_LISTEN_ADDRESS}/v1/sys/seal-status) -eq 200
+      test: test $$(curl -sS -w %{http_code} -k -o /dev/null ${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${BAO_PORT}/v1/sys/seal-status) -eq 200
       interval: 15s
       timeout: 5s
       retries: 3
