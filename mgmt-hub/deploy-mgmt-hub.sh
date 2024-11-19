@@ -176,7 +176,7 @@ export AGBOT2_PORT=${AGBOT2_PORT:-3120}
 export AGBOT2_SECURE_PORT=${AGBOT2_SECURE_PORT:-3121}
 
 export CSS_IMAGE_NAME=${CSS_IMAGE_NAME:-openhorizon/${ARCH}_cloud-sync-service}
-export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
+export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-1.10.1-1591}   # or can be set to stable or a specific version
 export CSS_PORT=${CSS_PORT:-9443}   # the host port the css container port should be mapped to
 export CSS_INTERNAL_PORT=${CSS_INTERNAL_PORT:-8080}   # the port css is listening on inside the container (gets mapped to host port CSS_PORT)
 # For descriptions and defaults for these values in CSS: https://github.com/open-horizon/edge-sync-service/blob/master/common/config.go
