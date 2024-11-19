@@ -228,7 +228,7 @@ export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, test
 # Note: in this environment, we are not supporting letting them specify their own owner key pair (only using the built-in sample key pair)
 export BAO_AUTH_PLUGIN_EXCHANGE=openhorizon-exchange
 export BAO_PORT=${BAO_PORT:-8200}
-export VAULT_DEV_LISTEN_ADDRESS=${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:${BAO_PORT}}
+export BAO_PORT_CLUSTER=${BAO_PORT_CLUSTER:-8201}
 export BAO_DISABLE_TLS=true
 # Todo: Future suuport for TLS/HTTPS with Bao
 #if [[ ${HZN_TRANSPORT} == https ]]; then
@@ -236,17 +236,21 @@ export BAO_DISABLE_TLS=true
 #else
 #    BAO_DISABLE_TLS=true
 #fi
-export BAO_IMAGE_NAME=${BAO_IMAGE_NAME:-openhorizon/${ARCH}_bao}
-export BAO_IMAGE_TAG=${BAO_IMAGE_TAG:-testing}
-export HZN_BAO_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${BAO_PORT}
+export BAO_API_ADDR=${BAO_API_ADDR:-${HZN_TRANSPORT}://0.0.0.0:${BAO_PORT}}
+export BAO_CLUSTER_ADDR=${BAO_CLUSTER_ADDR:-${HZN_TRANSPORT}://0.0.0.0:${BAO_PORT_CLUSTER}}
+export BAO_IMAGE_NAME=${BAO_IMAGE_NAME:-quay.io/openbao/openbao-ubi}
+export BAO_IMAGE_TAG=${BAO_IMAGE_TAG:-2.0}
 export BAO_LOG_LEVEL=${BAO_LOG_LEVEL:-info}
 export BAO_ROOT_TOKEN=${BAO_ROOT_TOKEN:-}
 export BAO_SEAL_SECRET_SHARES=1                                                   # Number of keys that exist that are capabale of being used to unseal the bao instance. 0 < shares >= threshold
 export BAO_SEAL_SECRET_THRESHOLD=1                                                # Number of keys needed to unseal the bao instance. threshold <= shares > 0
 export BAO_SECRETS_ENGINE_NAME=openhorizon
 export BAO_UNSEAL_KEY=${BAO_UNSEAL_KEY:-}
+export HZN_BAO_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${BAO_PORT}
+export OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION=${OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION:-0.1.0-test}
 export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-openhorizon/${ARCH}_vault}
 export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
+
 
 export AGENT_WAIT_ITERATIONS=${AGENT_WAIT_ITERATIONS:-15}
 export AGENT_WAIT_INTERVAL=${AGENT_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
@@ -255,7 +259,7 @@ export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-hzn}
 
 export HC_DOCKER_TAG=${HC_DOCKER_TAG:-latest}   # when using the anax-in-container agent
 
-OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/openbao}
+OH_DEVOPS_REPO=${OH_DEVOPS_REPO:-https://raw.githubusercontent.com/open-horizon/devops/master}
 OH_ANAX_RELEASES=${OH_ANAX_RELEASES:-https://github.com/open-horizon/anax/releases/latest/download}
 OH_ANAX_MAC_PKG_TAR=${OH_ANAX_MAC_PKG_TAR:-horizon-agent-macos-pkg-x86_64.tar.gz}
 OH_ANAX_DEB_PKG_TAR=${OH_ANAX_DEB_PKG_TAR:-horizon-agent-linux-deb-${ARCH_DEB}.tar.gz}
@@ -698,6 +702,25 @@ baoCreateSecretsEngine() {
     chkHttp $? $httpCode 204 "baoCreateSecretsEngine" $BAO_ERROR_FILE
 }
 
+baoDownloadAuthOHPlugin() {
+  if isFedora || isRedHat8 || isUbuntu18 || isUbuntu2x; then
+    os=linux
+  elif isMacOS; then
+    os=darwin
+  fi
+  if [[ "${ARCH}" == "amd64" ]]; then
+    arch=x86_64
+  elif [[ "${ARCH}" == "arm" ]]; then
+    arch=armv6
+  elif [[ "${ARCH}" == "arm64" ]]; then
+    arch=arm64v8.0
+  fi
+
+  getUrlFile https://github.com/naphelps/openbao-plugin-auth-openhorizon/releases/download/v"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"/openbao-plugin-auth-openhorizon_"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"_"$os"_"$arch".tar.gz "$TMP_DIR"/openbao-plugin-auth-openhorizon.tar.gz
+  mkdir -p $TMP_DIR/openbao/plugins
+  tar -zxf $TMP_DIR/openbao-plugin-auth-openhorizon.tar.gz -C $TMP_DIR/openbao/plugins
+}
+
 baoEnableAuthMethod() {
     echo Enabling auth method $BAO_AUTH_PLUGIN_EXCHANGE for secrets engine $BAO_SECRETS_ENGINE_NAME...
     httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$BAO_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$BAO_AUTH_PLUGIN_EXCHANGE\"}" $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME)
@@ -711,14 +734,14 @@ baoPluginCheck() {
 baoPluginHash() {
     echo Generating SHA256 hash of $BAO_AUTH_PLUGIN_EXCHANGE plugin...
     # Note: must redirect stdin to /dev/null, otherwise when this script is being piped into bash the following cmd will gobble the rest of this script and execution will end abruptly
-    hash=$($DOCKER_COMPOSE_CMD exec -T bao sha256sum /vault/plugins/hznbaoauth </dev/null | cut -d " " -f1)
+    hash=$($DOCKER_COMPOSE_CMD exec -T bao sha256sum /openbao/plugins/openbao-plugin-auth-openhorizon </dev/null | cut -d " " -f1)
 }
 
 baoRegisterPlugin() {
     local hash=
     echo Registering auth plugin $BAO_AUTH_PLUGIN_EXCHANGE to Bao instance...
     baoPluginHash
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"hznbaoauth\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"openbao-plugin-auth-openhorizon\", \"version\": \"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 204 "baoRegisterPlugin" $BAO_ERROR_FILE
 }
 
@@ -1010,7 +1033,8 @@ mkdir -p /etc/horizon   # putting the config files here because they are mounted
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json # [DEPRECATED] in v2.124.0+
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
 cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
-export VAULT_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
+export BAO_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
+baoDownloadAuthOHPlugin
 
 #====================== Start/Stop/Restart/Update ======================
 # Special cases to start/stop/restart via docker-compose needed so all of the same env vars referenced in docker-compose.yml will be set
@@ -1479,7 +1503,7 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     echo "  $nextNum. Created and registered an edge node to run the helloworld example edge service"
     nextNum=$((nextNum+1))
 fi
-echo "  $nextNum. Created a bao instance: $HZN_BAO_URL/v1/sys/seal-status" # $HZN_BAO_URL/ui/bao/auth?with=token UI not available in Bao 2.0.0-alpha20240329
+echo "  $nextNum. Created a bao instance: $HZN_BAO_URL/v1/sys/seal-status" # $HZN_BAO_URL/ui/bao/auth?with=token UI not available in Bao 2.x
 echo "    Automatically generated this key/token:"
 echo "      export BAO_UNSEAL_KEY=$BAO_UNSEAL_KEY"
 echo "      export BAO_ROOT_TOKEN=$BAO_ROOT_TOKEN"
