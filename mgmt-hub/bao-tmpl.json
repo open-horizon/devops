@@ -1,0 +1,16 @@
+{
+  "listener": {
+    "tcp": {
+      "address": "0.0.0.0:${BAO_PORT}",
+      "cluster_address": "0.0.0.0:${BAO_PORT_CLUSTER}",
+      "tls_disable": ${BAO_DISABLE_TLS}
+    }
+  },
+  "plugin_directory": "/openbao/plugins",
+  "storage": {
+    "file": {
+      "path": "/openbao/file"
+    }
+  },
+  "ui": false
+}
