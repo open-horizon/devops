@@ -716,7 +716,7 @@ baoDownloadAuthOHPlugin() {
     arch=arm64v8.0
   fi
 
-  getUrlFile https://github.com/naphelps/openbao-plugin-auth-openhorizon/releases/download/v"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"/openbao-plugin-auth-openhorizon_"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"_"$os"_"$arch".tar.gz "$TMP_DIR"/openbao-plugin-auth-openhorizon.tar.gz
+  getUrlFile https://github.com/open-horizon/openbao-plugin-auth-openhorizon/releases/download/v"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"/openbao-plugin-auth-openhorizon_"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"_"$os"_"$arch".tar.gz "$TMP_DIR"/openbao-plugin-auth-openhorizon.tar.gz
   mkdir -p $TMP_DIR/openbao/plugins
   tar -zxf $TMP_DIR/openbao-plugin-auth-openhorizon.tar.gz -C $TMP_DIR/openbao/plugins
 }
