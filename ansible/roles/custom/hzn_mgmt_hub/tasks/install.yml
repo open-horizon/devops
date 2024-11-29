@@ -28,7 +28,7 @@
   - name: Generate final config output
     load_env_config:
       ansible_facts: "{{ ansible_facts }}"
-      mgmt_hub: "{{ hzn_mgmt_hub }}"
+      mgmt_hub: "{{ hzn_mgmt_hub | default({}) }}"
       env_file: "{{ secrets_workdir.path }}/postinstall_env"
     register: install_config
 

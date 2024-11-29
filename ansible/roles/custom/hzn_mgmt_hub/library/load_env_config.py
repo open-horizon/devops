@@ -152,6 +152,9 @@ class ConfigLoader(object):
         idict = self.config
 
         if path.component:
+            if not path.component in idict:
+                idict[path.component] = {}
+            
             idict = idict[path.component]
 
         if path.field_type.value not in idict:

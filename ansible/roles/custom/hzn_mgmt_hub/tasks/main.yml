@@ -39,32 +39,60 @@
 - name: Generate environment for install
   load_env_config:
     ansible_facts: "{{ ansible_facts }}"
-    mgmt_hub: '{{ hzn_mgmt_hub }}'
+    mgmt_hub: '{{ hzn_mgmt_hub | default({}) }}'
     env_file: '{{ administrator_env }}'
     agent_install: '{{ agent_install }}'
-  register: install_config
+  register: pre_install_config
 
 # Write the agent-install.cfg file to disk.
 - name: Write agent-install.cfg to disk.
   ansible.builtin.copy:
     mode: '0644'
-    content: "{{ install_config.agent_install }}"
+    content: "{{ pre_install_config.agent_install }}"
     dest: agent-install.cfg
 
 - name: Write administrator.env to disk.
   ansible.builtin.copy:
     mode: '0600'
-    content: "{{ install_config.administrator_env }}"
+    content: "{{ pre_install_config.administrator_env }}"
     dest: administrator.env
 
 - name: Install or uninstall the management hub
   import_tasks: install.yml
   when: install or uninstall
 
+- name: Check for facts on remote
+  stat:
+    path: 'mgmt_hub_configuration.yml'
+  register: mgmt_hub_stat_result
+
+- name: Move config from install
+  ansible.builtin.set_fact:
+    hzn_mgmt_hub: '{{ install_config.hzn_mgmt_hub }}'
+  when: install
+ 
+- name: Move config from preinstall
+  ansible.builtin.set_fact:
+    hzn_mgmt_hub: '{{ pre_install_config.hzn_mgmt_hub }}'
+  when: not install and hzn_mgmt_hub is undefined and not mgmt_hub_stat_result.stat.exists
+
+# Load the facts from the active installation. We need this information to control users and orgs.
+# It should be coming from an ansible vault, however we can try to load it from the remote system.
+- name: Try to load installation facts
+  block:
+  - name: Slurp from remote
+    ansible.builtin.slurp:
+      src: 'mgmt_hub_configuration.yml'
+    register: hzn_mgmt_hub_slurped
+  - name: Set fact
+    ansible.builtin.set_fact:
+      hzn_mgmt_hub: '{{ hzn_mgmt_hub_slurped.content | b64decode | from_yaml }}'
+  when: not uninstall and hzn_mgmt_hub is undefined
+
 - name: Upgrade the management hub
   import_tasks: upgrade.yml
   when: upgrade
 
-# - name: Run user and group management
-#   import_tasks: user_mgmt.yml
-#   when: not uninstall and exchange_config is defined
+- name: Run user and group management
+  import_tasks: user_mgmt.yml
+  when: not uninstall and exchange_config is defined
