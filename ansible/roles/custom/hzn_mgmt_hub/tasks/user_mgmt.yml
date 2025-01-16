@@ -1,18 +1,4 @@
 
-# Load the facts from the active installation. We need this information to control users and orgs.
-# It should be coming from an ansible vault, however we can try to load it from the remote system.
-# - name: Try to load installation facts
-#   ansible.builtin.include_vars:
-#     remote_src: true
-#     file: mgmt_hub_configuration.yml
-#     name: hzn_mgmt_hub
-#   when: install_config.skipped
-
-- name: Move config
-  ansible.builtin.set_fact:
-    hzn_mgmt_hub: '{{ install_config.hzn_mgmt_hub }}'
-  when: not install_config.skipped
-
 - name: Gather present configuration
   get_exchange_config:
     root_credentials: 'root/root:{{ hzn_mgmt_hub.exchange.secrets.root_pw }}'
