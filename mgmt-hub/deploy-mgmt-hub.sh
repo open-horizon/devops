@@ -984,7 +984,7 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
     export EXCHANGE_HTTPS_PORT=8080   # the internal port it listens on. [DEPRECATED] in v2.124.0+
     export EXCHANGE_PEKKO_HTTPS_PORT=8080
     export EXCHANGE_TRUST_STORE_PATH=\"/etc/horizon/exchange/keys/${EXCHANGE_TRUST_STORE_FILE}\"   # the exchange container's internal path
-    export EXCHANGE_TLS_TRUSTSTORE=${EXCHANGE_TRUST_STORE_PATH}
+    export EXCHANGE_TLS_TRUSTSTORE=${EXCHANGE_TLS_TRUSTSTORE:-/etc/horizon/exchange/keys/trustore.p12}
     EXCH_CERT_ARG="--cacert $CERT_DIR/$CERT_BASE_NAME.crt"   # for use when this script is calling the exchange
 
     export CSS_LISTENING_TYPE=secure

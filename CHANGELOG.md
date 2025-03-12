@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2025-03-12
+- Issue-200: Removed erroneous double-quotes from Exchange's TLS configuration variables.
+
 ## [] - 2024-10-31
 - Issue-186: Removed erroneous lines from agbot-tmpl.json.
 
