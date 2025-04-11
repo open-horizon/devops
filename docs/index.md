@@ -1,7 +1,7 @@
 ---
 copyright:
-years: 2023
-lastupdated: "2023-02-17"
+years: 2025
+lastupdated: "2025-04-11"
 title: "All-in-One Mgmt Hub"
 
 parent: Management Hub
@@ -213,6 +213,22 @@ When you want to use the Horizon management hub services and edge agent again, y
 ```bash
 ./deploy-mgmt-hub.sh -s
 ```
+
+### <a id="all-in-one-remove">Removing the Horizon management hub services</a>
+
+If you don't need the Horizon management hub services, or you would like to upgrade them, you can stop and remove the containers by running:
+
+```bash
+./deploy-mgmt-hub.sh -SP
+```
+
+To clean up any configuration information from the previous running instance, remove the volume:
+
+```bash
+docker volume prune -af
+```
+
+NOTE: If you do not prune the volume from the previous instance, any new install process may fail or enter an unstable state.
 
 ## <a id="setup-vm">Setting up a VM for the All-in-One Environment</a>
 
