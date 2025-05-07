@@ -195,6 +195,28 @@ getUrlFile() {
     fi
 }
 
+wait_for_service() {
+  local url="$1"
+  local max_retries="${2:-15}"
+  local sleep_seconds="${3:-2}"
+  local count=0
+
+  echo "Waiting for $url to become available..."
+
+  until curl --silent --fail "$url" > /dev/null; do
+    count=$((count + 1))
+    echo "  [$count/$max_retries] $url not ready yet..."
+    if [ "$count" -ge "$max_retries" ]; then
+      echo "Timeout: $url did not respond after $((max_retries * sleep_seconds)) seconds."
+      return 1
+    fi
+    sleep "$sleep_seconds"
+  done
+
+  echo "$url is up and responding!"
+  return 0
+}
+
 #====================== Main Code ======================
 
 if [[ ${FDO_MFG_SVC_AUTH} != *"apiUser:"* || ${FDO_MFG_SVC_AUTH} == *$'\n'* || ${FDO_MFG_SVC_AUTH} == *'|'* ]]; then
@@ -241,19 +263,20 @@ chk $? "getting imported vouchers"
 
 
 if [[ ! -f start-rv.sh ]]; then
-    getUrlFile "https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-mfg/start-rv.sh"
+    getUrlFile "https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-rv/start-rv.sh"
 fi
 
 chmod +x start-rv.sh
 chk $? 'making start-rv.sh executable'
 ./start-rv.sh
 chk $? 'running start-rv.sh'
-export FDO_RV_URL="http://$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' pri-fdo-rv)"
+export FDO_RV_URL=${FDO_RV_URL:-http://$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' pri-fdo-rv)}
 echo "FDO_RV_URL: $FDO_RV_URL"
 
 echo -e "\n======================== Verifying FDO Rendezvous Service is functioning..."
+wait_for_service "${FDO_RV_URL}:${FDO_RV_PORT}/health" 20 2
 httpCode=$(curl -sS -w "%{http_code}" -o /dev/null "${FDO_RV_URL}:${FDO_RV_PORT}/health" 2>$CURL_ERROR_FILE)
-#chkHttp $? "$httpCode" 200 "pinging rendezvous server"
+chkHttp $? "$httpCode" 200 "pinging rendezvous server"
 
 echo -e "\n======================== Configuring this host as a simulated FDO device..."
 echo -e "  FDO Manufacturer Service authentication credentials:"
