@@ -66,19 +66,20 @@ export FDO_MFG_SVC_AUTH=${FDO_MFG_SVC_AUTH:-apiUser:$(generateToken 30)}
 export FDO_MFG_SVC_PORT=${FDO_MFG_SVC_PORT:-8039}
 export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_COMP_SVC_PORT:-9008}
 export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
-export FDO_RV_URL=${FDO_RV_URL:-http://fdorv.com} # set to the production domain by default. Development domain is Owner's service public key protected.
 export FDO_SAMPLE_MFG_KEEP_SVCS=${FDO_SAMPLE_MFG_KEEP_SVCS:-true}
 FDO_SUPPORT_RELEASE=${FDO_SUPPORT_RELEASE:-https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-mfg/start-mfg.sh}
 #FDO_SUPPORT_RELEASE=${FDO_SUPPORT_RELEASE:-https://github.com/open-horizon/FDO-support/releases/latest/download}
 FDO_RV_PORT=${FDO_RV_PORT:-80}
 FDO_AGREEMENT_WAIT=${FDO_AGREEMENT_WAIT:-30}
 FDO_TO0_WAIT=${FDO_TO0_WAIT:-10}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
-export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.7}
+export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.9}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
-export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-39}
+export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-42}
+export SUPPORTED_DEBIAN_VERSION_APPEND=${SUPPORTED_DEBIAN_VERSION_APPEND:-noble}
 export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
+export FDO_RV_START_SCRIPT_URL=${FDO_RV_START_SCRIPT_URL:-https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-rv/start-rv.sh}
 
 # Global variables for this script (not intended to be overridden)
 TMP_DIR=/tmp/horizon-all-in-1
@@ -196,6 +197,28 @@ getUrlFile() {
     fi
 }
 
+wait_for_service() {
+  local url="$1"
+  local max_attempts="${2:-15}"
+  local sleep_seconds="${3:-2}"
+  local count=0
+
+  echo "Waiting for $url to become available..."
+
+  until curl --silent --fail "$url" > /dev/null; do
+    count=$((count + 1))
+    echo "  [$count/$max_attempts] $url not ready yet..."
+    if [ "$count" -ge "$max_attempts" ]; then
+      echo "Timeout: $url did not respond after $((max_attempts * sleep_seconds)) seconds."
+      return 1
+    fi
+    sleep "$sleep_seconds"
+  done
+
+  echo "$url is up and responding!"
+  return 0
+}
+
 #====================== Main Code ======================
 
 if [[ ${FDO_MFG_SVC_AUTH} != *"apiUser:"* || ${FDO_MFG_SVC_AUTH} == *$'\n'* || ${FDO_MFG_SVC_AUTH} == *'|'* ]]; then
@@ -218,8 +241,6 @@ mgmtHubHost=${mgmtHubHost%%:*}  # remove the trailing info starting at :<port>..
 ocsApiUrl=$(grep -m 1 -E '^ *HZN_FDO_SVC_URL=' /etc/default/horizon)
 chk $? 'querying HZN_FDO_SVC_URL in /etc/default/horizon'
 ocsApiUrl=${ocsApiUrl#*HZN_FDO_SVC_URL=}
-#export FDO_RV_URL="http://$mgmtHubHost:$FDO_RV_PORT"
-export FDO_RV_URL=${FDO_RV_URL:-http://test.fdorv.com}
 
 # deploy-mgmt-hub.sh registered this host as an edge node, so unregister it
 if [[ $(hzn node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
@@ -242,8 +263,21 @@ echo "Imported vouchers (empty list is expected initially):"
 hzn fdo voucher list
 chk $? "getting imported vouchers"
 
+
+if [[ ! -f start-rv.sh ]]; then
+    getUrlFile "$FDO_RV_START_SCRIPT_URL"
+fi
+
+chmod +x start-rv.sh
+chk $? 'making start-rv.sh executable'
+./start-rv.sh
+chk $? 'running start-rv.sh'
+export FDO_RV_URL=${FDO_RV_URL:-http://$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' pri-fdo-rv)}
+echo "FDO_RV_URL: $FDO_RV_URL"
+
 echo -e "\n======================== Verifying FDO Rendezvous Service is functioning..."
-httpCode=$(curl -sS -w "%{http_code}" -o /dev/null "$FDO_RV_URL:$FDO_RV_PORT/health" 2>$CURL_ERROR_FILE)
+wait_for_service "${FDO_RV_URL}:${FDO_RV_PORT}/health" 20 2
+httpCode=$(curl -sS -w "%{http_code}" -o /dev/null "${FDO_RV_URL}:${FDO_RV_PORT}/health" 2>$CURL_ERROR_FILE)
 chkHttp $? "$httpCode" 200 "pinging rendezvous server"
 
 echo -e "\n======================== Configuring this host as a simulated FDO device..."

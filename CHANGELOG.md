@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2025-05-07
+- Update the test-fdo.sh script to use the new FDO Rendezvous server.
+
 ## [] - 2025-03-12
 - Issue-200: Removed erroneous double-quotes from Exchange's TLS configuration variables.
 
