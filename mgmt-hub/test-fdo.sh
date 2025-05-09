@@ -74,11 +74,12 @@ FDO_AGREEMENT_WAIT=${FDO_AGREEMENT_WAIT:-30}
 FDO_TO0_WAIT=${FDO_TO0_WAIT:-10}   # number of seconds to sleep to give to0scheduler a chance to register the voucher with the RV
 export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.9}
 OH_EXAMPLES_REPO=${OH_EXAMPLES_REPO:-https://raw.githubusercontent.com/open-horizon/examples/master}
-export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-39}
+export SUPPORTED_REDHAT_VERSION_APPEND=${SUPPORTED_REDHAT_VERSION_APPEND:-42}
 export SUPPORTED_DEBIAN_VERSION_APPEND=${SUPPORTED_DEBIAN_VERSION_APPEND:-noble}
 export HZN_ORG_ID=${HZN_ORG_ID:-myorg}
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}
+export FDO_RV_START_SCRIPT_URL=${FDO_RV_START_SCRIPT_URL:-https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-rv/start-rv.sh}
 
 # Global variables for this script (not intended to be overridden)
 TMP_DIR=/tmp/horizon-all-in-1
@@ -198,7 +199,7 @@ getUrlFile() {
 
 wait_for_service() {
   local url="$1"
-  local max_retries="${2:-15}"
+  local max_attempts="${2:-15}"
   local sleep_seconds="${3:-2}"
   local count=0
 
@@ -206,9 +207,9 @@ wait_for_service() {
 
   until curl --silent --fail "$url" > /dev/null; do
     count=$((count + 1))
-    echo "  [$count/$max_retries] $url not ready yet..."
-    if [ "$count" -ge "$max_retries" ]; then
-      echo "Timeout: $url did not respond after $((max_retries * sleep_seconds)) seconds."
+    echo "  [$count/$max_attempts] $url not ready yet..."
+    if [ "$count" -ge "$max_attempts" ]; then
+      echo "Timeout: $url did not respond after $((max_attempts * sleep_seconds)) seconds."
       return 1
     fi
     sleep "$sleep_seconds"
@@ -264,7 +265,7 @@ chk $? "getting imported vouchers"
 
 
 if [[ ! -f start-rv.sh ]]; then
-    getUrlFile "https://raw.githubusercontent.com/open-horizon/FDO-support/main/sample-rv/start-rv.sh"
+    getUrlFile "$FDO_RV_START_SCRIPT_URL"
 fi
 
 chmod +x start-rv.sh
