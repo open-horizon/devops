@@ -1,14 +1,5 @@
-version: "3"
 
-# Listing the volumes here makes them persistent across container restarts
-volumes:
-  postgres:
-  postgresvolfdo:
-  mongovol:
-  agbotmsgkeyvol:
-  fdo-ocs-db:
-  bao-vol:
-  bao-logs-vol:
+name: open-horizon
 
 networks:
   horizonnet:
@@ -16,7 +7,6 @@ networks:
     name: hzn_horizonnet
 
 services:
-
   agbot:
     image: ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
     container_name: agbot
@@ -57,9 +47,6 @@ services:
     networks:
       - horizonnet
     environment:
-      # need to leave this as a variable in the config file because otherwise the $ in the pw value gets interpreted as an env var
-      - EXCHANGE_ROOT_PW_BCRYPTED=$EXCHANGE_ROOT_PW_BCRYPTED # [DEPRECATED] in v2.124.0+
-
       # Variables for use with Exchange v2.124.0+
       ## Minimal
       - EXCHANGE_DB_HOST=postgres
@@ -67,7 +54,7 @@ services:
       - EXCHANGE_DB_PORT=${POSTGRES_PORT}
       - EXCHANGE_DB_PW=${EXCHANGE_DB_PW}
       - EXCHANGE_DB_USER=${POSTGRES_USER}
-      - EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW_BCRYPTED:-EXCHANGE_ROOT_PW}
+      - EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW}
       ## Advanced
       - EXCHANGE_CHANGES_TRIM
       - EXCHANGE_CHANGES_TTL
@@ -87,7 +74,7 @@ services:
       - EXCHANGE_MAX_SERVICES
       - EXCHANGE_PEKKO_HTTP_PORT
       - EXCHANGE_PEKKO_HTTPS_PORT
-      - EXCHANGE_PEKKO_LOGLEVEL=${EXCHANGE_PEKKO_LOGLEVEL:-EXCHANGE_LOG_LEVEL}
+      - EXCHANGE_PEKKO_LOGLEVEL=${EXCHANGE_PEKKO_LOGLEVEL:-$EXCHANGE_LOG_LEVEL}
       - EXCHANGE_TLS_PASSWORD=${EXCHANGE_TLS_PASSWORD:-}
       - EXCHANGE_TLS_TRUSTSTORE
       - HIKARICP_MINIMUMIDLE
@@ -259,3 +246,13 @@ services:
       retries: 3
     depends_on:
       - exchange-api
+
+# Listing the volumes here makes them persistent across container restarts
+volumes:
+  postgres:
+  postgresvolfdo:
+  mongovol:
+  agbotmsgkeyvol:
+  fdo-ocs-db:
+  bao-vol:
+  bao-logs-vol:

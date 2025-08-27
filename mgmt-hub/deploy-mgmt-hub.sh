@@ -96,18 +96,11 @@ fi
 # Default environment variables that can be overridden. Note: most of them have to be exported for envsubst to use when processing the template files.
 
 # You have the option of specifying the exchange root pw: the clear value is only used in this script temporarily to prime the exchange.
-# The bcrypted value can be created using the /admin/hashpw API of an existing exhange. It is stored in the exchange config file, which
-# is needed each time the exchange starts. It will default to the clear pw, but that is less secure.
 if [[ -z "$EXCHANGE_ROOT_PW" ]];then
-    if [[ -n "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
-        # Can't specify EXCHANGE_ROOT_PW_BCRYPTED while having this script generate a random EXCHANGE_ROOT_PW, because they won't match
-        fatal 1 "can not specify EXCHANGE_ROOT_PW_BCRYPTED without also specifying the equivalent EXCHANGE_ROOT_PW"
-    fi
     EXCHANGE_ROOT_PW_GENERATED=1
 fi
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }   # inspired by https://gist.github.com/earthgecko/3089509#gistcomment-3530978
 export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
-export EXCHANGE_ROOT_PW_BCRYPTED=${EXCHANGE_ROOT_PW_BCRYPTED:-$EXCHANGE_ROOT_PW}  # we are not able to bcrypt it, so must default to the clear pw when they do not specify it. [DEPRECATED] in v2.124.0+
 
 # the passwords of the admin user in the system org and of the hub admin. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_SYSTEM_ADMIN_PW" ]]; then
@@ -139,7 +132,7 @@ export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub
 export HZN_TRANSPORT=${HZN_TRANSPORT:-http}   # Note: setting this to https is experimental, still under development!!!!!!
 
 export EXCHANGE_DB_PW=${EXCHANGE_DB_PW:-$(generateToken 30)}
-export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-openhorizon/${ARCH}_exchange-api}
+export EXCHANGE_IMAGE_NAME=${EXCHANGE_IMAGE_NAME:-quay.io/open-horizon/exchange-ubi}
 export EXCHANGE_IMAGE_TAG=${EXCHANGE_IMAGE_TAG:-testing}   # or can be set to stable or a specific version
 export EXCHANGE_PORT=${EXCHANGE_PORT:-3090}
 export EXCHANGE_LOG_LEVEL=${EXCHANGE_LOG_LEVEL:-INFO}
@@ -855,8 +848,8 @@ else   # redhat
 fi
 
 # Initial checking of the input and OS
-if [[ -z "$EXCHANGE_ROOT_PW" || -z "$EXCHANGE_ROOT_PW_BCRYPTED" ]]; then
-    fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW, EXCHANGE_ROOT_PW_BCRYPTED"
+if [[ -z "$EXCHANGE_ROOT_PW" ]]; then
+    fatal 1 "these environment variables must be set: EXCHANGE_ROOT_PW"
 fi
 if [[ ! $HZN_LISTEN_IP =~ $IP_REGEX ]]; then
     fatal 1 "HZN_LISTEN_IP must be an IP address (not a hostname)"
@@ -1028,7 +1021,7 @@ getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh test-fdo.sh
 chmod +x test-fdo.sh
 
 echo "Substituting environment variables into template files..."
-export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $, because we need to let the exchange itself replace $EXCHANGE_ROOT_PW_BCRYPTED
+export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $
 mkdir -p /etc/horizon   # putting the config files here because they are mounted long-term into the containers
 cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json # [DEPRECATED] in v2.124.0+
 cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
