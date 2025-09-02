@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2025-09-02
+- Added support for MongoDB v6.x via environment variable toggle.
+    - Due to licensing changes after version 4 this will be disabled by default.
+    - Users should evaluate MongoDb's software licensing terms before enabling at their own risk.
+- Fixed Arm64 version reference for Open Horizon's OpenBao plugin.
+- Updated the default version of the plugin pulled.
+- The script will no longer automatically overwrite all of your local files with copies from this repository.
+- Bug fixes.
+
 ## [] - 2025-05-07
 - Update the test-fdo.sh script to use the new FDO Rendezvous server.
 

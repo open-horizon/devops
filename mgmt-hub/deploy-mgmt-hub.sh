@@ -30,11 +30,12 @@ Flags:
 Optional Environment Variables:
   For a list of optional environment variables, their defaults and descriptions, see the beginning of this script.
 EndOfMessage
-    exit $exitCode
+    exit "$exitCode"
 }
 
 # Get current hardware architecture
-export ARCH=$(uname -m | sed -e 's/aarch64.*/arm64/' -e 's/x86_64.*/amd64/' -e 's/armv.*/arm/')
+ARCH=$(uname -m | sed -e 's/aarch64.*/arm64/' -e 's/x86_64.*/amd64/' -e 's/armv.*/arm/')
+export ARCH
 if [[ $ARCH == "ppc64le" ]]; then
     export ARCH_DEB=ppc64el
 else
@@ -88,43 +89,53 @@ if [[ -n $CONFIG_FILE ]]; then
     fi
     echo "Reading configuration file $CONFIG_FILE ..."
     set -a   # export all variable assignments until further notice
-    source "$CONFIG_FILE"
-    if [[ $? -ne 0 ]]; then echo "there are errors in $CONFIG_FILE"; exit 1; fi   # source seems to return 0 even when there is an error in the file
+    # shellcheck source=/dev/null
+    if ! source "$CONFIG_FILE"
+    then
+      echo "there are errors in $CONFIG_FILE"; exit 1;
+    fi   # source seems to return 0 even when there is an error in the file
     set +a   # undoes the automatic exporting
 fi
 
 # Default environment variables that can be overridden. Note: most of them have to be exported for envsubst to use when processing the template files.
 
-# You have the option of specifying the exchange root pw: the clear value is only used in this script temporarily to prime the exchange.
-if [[ -z "$EXCHANGE_ROOT_PW" ]];then
-    EXCHANGE_ROOT_PW_GENERATED=1
-fi
 generateToken() { head -c 1024 /dev/urandom | base64 | tr -cd "[:alpha:][:digit:]"  | head -c $1; }   # inspired by https://gist.github.com/earthgecko/3089509#gistcomment-3530978
-export EXCHANGE_ROOT_PW=${EXCHANGE_ROOT_PW:-$(generateToken 30)}  # the clear exchange root pw, used temporarily to prime the exchange
+
+# You have the option of specifying the exchange root pw: the clear value is only used in this script temporarily to prime the exchange.
+if [[ -z "$EXCHANGE_ROOT_PW" ]]; then
+    EXCHANGE_ROOT_PW=$(generateToken 30)  # the clear exchange root pw, used temporarily to prime the exchange
+    EXCHANGE_ROOT_PW_GENERATED=1
+    export EXCHANGE_ROOT_PW
+fi
 
 # the passwords of the admin user in the system org and of the hub admin. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_SYSTEM_ADMIN_PW" ]]; then
-    export EXCHANGE_SYSTEM_ADMIN_PW=$(generateToken 30)
+    EXCHANGE_SYSTEM_ADMIN_PW=$(generateToken 30)
     EXCHANGE_SYSTEM_ADMIN_PW_GENERATED=1
+    export EXCHANGE_SYSTEM_ADMIN_PW
 fi
 if [[ -z "$EXCHANGE_HUB_ADMIN_PW" ]]; then
-    export EXCHANGE_HUB_ADMIN_PW=$(generateToken 30)
+    EXCHANGE_HUB_ADMIN_PW=$(generateToken 30)
     EXCHANGE_HUB_ADMIN_PW_GENERATED=1
+    export EXCHANGE_HUB_ADMIN_PW
 fi
 # the system org agbot token. Defaults to a generated value that will be displayed at the end
 if [[ -z "$AGBOT_TOKEN" ]]; then
-    export AGBOT_TOKEN=$(generateToken 30)
+    AGBOT_TOKEN=$(generateToken 30)
     AGBOT_TOKEN_GENERATED=1
+    export AGBOT_TOKEN
 fi
 # the password of the admin user in the user org. Defaults to a generated value that will be displayed at the end
 if [[ -z "$EXCHANGE_USER_ADMIN_PW" ]]; then
-    export EXCHANGE_USER_ADMIN_PW=$(generateToken 30)
+    EXCHANGE_USER_ADMIN_PW=$(generateToken 30)
     EXCHANGE_USER_ADMIN_PW_GENERATED=1
+    export EXCHANGE_USER_ADMIN_PW
 fi
 # the node token. Defaults to a generated value that will be displayed at the end
 if [[ -z "$HZN_DEVICE_TOKEN" ]]; then
-    export HZN_DEVICE_TOKEN=$(generateToken 30)
+    HZN_DEVICE_TOKEN=$(generateToken 30)
     HZN_DEVICE_TOKEN_GENERATED=1
+    export HZN_DEVICE_TOKEN
 fi
 
 export HZN_LISTEN_IP=${HZN_LISTEN_IP:-127.0.0.1}   # the host IP address the hub services should listen on. Can be set to 0.0.0.0 to mean all interfaces, including the public IP.
@@ -193,6 +204,19 @@ export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get
 export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
 export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
+export MONGO_PROTOCOL=${MONGO_PROTOCOL:-mongo}
+export MONGO_UTILITY=${MONGO_UTILITY:-mongo}
+# MongoDB version 6.x uses a different license than in version 4.0, and is no longer a compliant open source license.
+# Users should evaluate this license change before hand on their own.
+# https://www.mongodb.com/legal/licensing/community-edition
+# Enable at your own risk!
+export MONGO_VERSION_6_ENABLE=${MONGO_VERSION_6_ENABLE:-false}
+if [[ "$MONGO_VERSION_6_ENABLE" == true ]]; then
+  CSS_IMAGE_TAG=latest
+  MONGO_IMAGE_TAG=6.0
+  MONGO_PROTOCOL=mongodb://mongo
+  MONGO_UTILITY=mongosh
+fi
 
 # FDO Owner [Companion] Service
 export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the number of seconds to wait between attempts to connect to the exchange during startup
@@ -240,7 +264,7 @@ export BAO_SEAL_SECRET_THRESHOLD=1                                              
 export BAO_SECRETS_ENGINE_NAME=openhorizon
 export BAO_UNSEAL_KEY=${BAO_UNSEAL_KEY:-}
 export HZN_BAO_URL=${HZN_TRANSPORT}://${HZN_LISTEN_IP}:${BAO_PORT}
-export OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION=${OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION:-1.0.0}
+export OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION=${OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION:-1.0.1}
 export VAULT_IMAGE_NAME=${VAULT_IMAGE_NAME:-openhorizon/${ARCH}_vault}
 export VAULT_IMAGE_TAG=${VAULT_IMAGE_TAG:-latest}
 
@@ -292,7 +316,7 @@ NC='\e[0m'   # no color, return to default
 # Only echo this if VERBOSE is 1 or true
 verbose() {
     if [[ "$VERBOSE" == '1' || "$VERBOSE" == 'true' ]]; then
-        echo 'verbose:' $*
+        echo 'verbose:' "$*"
     fi
 }
 
@@ -301,7 +325,7 @@ fatal() {
     local exitCode=$1
     # the rest of the args are the message
     echo "Error:" ${@:2}
-    exit $exitCode
+    exit "$exitCode"
 }
 
 # Check the exit code passed in and exit if non-zero
@@ -486,11 +510,11 @@ getUrlFile() {
     verbose "Downloading $url ..."
     if [[ $url == *@* ]]; then
         # special case for development:
-        scp $url $localFile
+        scp "$url" "$localFile"
         chk $? "scp'ing $url"
     else
-        local httpCode=$(curl -sS -w "%{http_code}" -L -o $localFile $url 2>$CURL_ERROR_FILE)
-        chkHttp $? $httpCode 200 "downloading $url" $CURL_ERROR_FILE $localFile
+        local httpCode=$(curl -fsSL -w "%{http_code}" -L -o "$localFile" "$url" 2>$CURL_ERROR_FILE)
+        chkHttp $? "$httpCode" 200 "downloading $url" $CURL_ERROR_FILE "$localFile"
     fi
 }
 
@@ -498,13 +522,14 @@ getUrlFile() {
 pullDockerImage() {
     local imagePath=${1:?}
     local imageTag=${imagePath##*:}
-    if [[ $imageTag =~ ^(latest|testing)$ || -z $(docker images -q $imagePath 2> /dev/null) ]]; then
+    if [[ $imageTag =~ ^(latest|testing)$ || -z $(docker images -q "$imagePath" 2> /dev/null) ]]; then
         echo "Pulling $imagePath ..."
-        runCmdQuietly docker pull $imagePath
+        runCmdQuietly docker pull "$imagePath"
     else
         # Docker image exists locally. Try to pull, but only exit if pull fails for a reason other than 'not found'
         echo "Trying to pull $imagePath ..."
-        local output=$(docker pull $imagePath 2>&1)
+        output=$(docker pull "$imagePath" 2>&1)
+        local output
         if [[ $? -ne 0 && $output != *'not found'* ]]; then
             echo "Error running docker pull $imagePath: $output"
             exit 2
@@ -515,13 +540,13 @@ pullDockerImage() {
 # Pull all of the docker images to ensure we have the most recent images locally
 pullImages() {
     # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
-    pullDockerImage ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
-    pullDockerImage ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
-    pullDockerImage ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
-    pullDockerImage ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
-    pullDockerImage ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
-    pullDockerImage ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}
-    pullDockerImage ${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG}
+    pullDockerImage "${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}"
+    pullDockerImage "${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}"
+    pullDockerImage "${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}"
+    pullDockerImage "${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}"
+    pullDockerImage "${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}"
+    pullDockerImage "${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG}"
+    pullDockerImage "${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG}"
 }
 
 # Find 1 of the private IPs of the host - not currently used
@@ -558,12 +583,12 @@ add_autocomplete() {
         # The default terminal app on mac reads .bash_profile instead of .bashrc . But some 3rd part terminal apps read .bashrc, so update that too, if it exists
         for rcFile in ~/.${shellFile}_profile ~/.${shellFile}rc; do
             if [[ -f "$rcFile" ]]; then
-                grep -q -E "^source ${autocomplete}" $rcFile 2>/dev/null || echo -e "\nsource ${autocomplete}" >> $rcFile
+                grep -q -E "^source ${autocomplete}" "$rcFile" 2>/dev/null || echo -e "\nsource ${autocomplete}" >> "$rcFile"
             fi
         done
     else   # linux
         local autocomplete="/etc/bash_completion.d/hzn_bash_autocomplete.sh"
-        grep -q -E "^source ${autocomplete}" ~/.${shellFile}rc 2>/dev/null || echo -e "\nsource ${autocomplete}" >>~/.${shellFile}rc
+        grep -q -E "^source ${autocomplete}" "$HOME/.${shellFile}rc" 2>/dev/null || echo -e "\nsource ${autocomplete}" >> "$HOME/.${shellFile}rc"
     fi
 }
 
@@ -576,11 +601,11 @@ waitForAgent() {
             break
         fi
         printf '.'
-        sleep $AGENT_WAIT_INTERVAL
+        sleep "$AGENT_WAIT_INTERVAL"
     done
     echo ''
     if [[ "$success" != 'true' ]]; then
-        local numSeconds=$(( $AGENT_WAIT_ITERATIONS * $AGENT_WAIT_INTERVAL ))
+        local numSeconds=$(( "$AGENT_WAIT_ITERATIONS" * "$AGENT_WAIT_INTERVAL" ))
         fatal 6 "can not reach the agent (tried for $numSeconds seconds): $(cat $CURL_ERROR_FILE 2>/dev/null)"
     fi
 }
@@ -592,7 +617,7 @@ putOneFileInCss() {
     fi
 
     echo "Publishing $filename in CSS as public object $objectID in the IBM org..."
-    echo '{ "objectID":"'$objectID'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | $HZN mms -o IBM object publish -m- -f $filename
+    echo '{ "objectID":"'$objectID'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | $HZN mms -o IBM object publish -m- -f "$filename"
     chk $? "publishing $filename in CSS as a public object"
 }
 
@@ -604,7 +629,7 @@ isCertForHost() {   # Not currently used!! Return true (0) if the current cert i
     fi
     certCommonName=$(openssl x509 -noout -subject -in $currentCert | awk '{print $NF}')   # $NF gets the last word of the text
     chk $? "getting common name of cert $currentCert"
-    if [[ $certCommonName == $ipOrHost ]]; then
+    if [[ $certCommonName == "$ipOrHost" ]]; then
         return 0
     else
         return 1
@@ -641,7 +666,8 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
     chk $? "making directory $CERT_DIR"
     removeKeyAndCert
-    local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    local altNames
     altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
 
     echo "Creating self-signed certificate for these IP addresses: $altNames"
@@ -670,7 +696,8 @@ createKeyAndCertFDO() {   # create in directory $CERT_DIR a certificate named: $
     # Create the certificate that FDO needs
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
     chk $? "making directory $CERT_DIR"
-    local altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
+    local altNames
     altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
 
     echo "Creating self-signed certificate for these IP addresses: $altNames"
@@ -686,12 +713,12 @@ createKeyAndCertFDO() {   # create in directory $CERT_DIR a certificate named: $
 
 # ----- Bao functions -----
 baoAuthMethodCheck() {
-    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME/$BAO_AUTH_PLUGIN_EXCHANGE/tune $* 2>$BAO_ERROR_FILE
+    curl -fsSL -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME/$BAO_AUTH_PLUGIN_EXCHANGE/tune $* 2>$BAO_ERROR_FILE
 }
 
 baoCreateSecretsEngine() {
     echo Creating KV ver.2 secrets engine $BAO_SECRETS_ENGINE_NAME...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$BAO_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_BAO_URL/v1/sys/mounts/$BAO_SECRETS_ENGINE_NAME $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -fsSL -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"path\": \"$BAO_SECRETS_ENGINE_NAME\",\"type\": \"kv\",\"config\": {},\"options\": {\"version\":2},\"generate_signing_key\": true}" $HZN_BAO_URL/v1/sys/mounts/$BAO_SECRETS_ENGINE_NAME $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 204 "baoCreateSecretsEngine" $BAO_ERROR_FILE
 }
 
@@ -706,7 +733,7 @@ baoDownloadAuthOHPlugin() {
   elif [[ "${ARCH}" == "arm" ]]; then
     arch=armv6
   elif [[ "${ARCH}" == "arm64" ]]; then
-    arch=arm64v8.0
+    arch=arm64v9.0
   fi
 
   getUrlFile https://github.com/open-horizon/openbao-plugin-auth-openhorizon/releases/download/v"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"/openbao-plugin-auth-openhorizon_"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION"_"$os"_"$arch".tar.gz "$TMP_DIR"/openbao-plugin-auth-openhorizon.tar.gz
@@ -716,12 +743,12 @@ baoDownloadAuthOHPlugin() {
 
 baoEnableAuthMethod() {
     echo Enabling auth method $BAO_AUTH_PLUGIN_EXCHANGE for secrets engine $BAO_SECRETS_ENGINE_NAME...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$BAO_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$BAO_AUTH_PLUGIN_EXCHANGE\"}" $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME)
+    httpCode=$(curl -fsSL -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X POST -d "{\"config\": {\"token\": \"$BAO_ROOT_TOKEN\", \"url\": \"$HZN_TRANSPORT://exchange-api:8080\"}, \"type\": \"$BAO_AUTH_PLUGIN_EXCHANGE\"}" $HZN_BAO_URL/v1/sys/auth/$BAO_SECRETS_ENGINE_NAME)
     chkHttp $? $httpCode 204 "baoEnableAuthMethod" $BAO_ERROR_FILE
 }
 
 baoPluginCheck() {
-    curl -sS -w "%{http_code}" -o $BAO_PLUGIN_FILE -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE
+    curl -fsSL -w "%{http_code}" -o $BAO_PLUGIN_FILE -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE
 }
 
 baoPluginHash() {
@@ -734,36 +761,36 @@ baoRegisterPlugin() {
     local hash=
     echo Registering auth plugin $BAO_AUTH_PLUGIN_EXCHANGE to Bao instance...
     baoPluginHash
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"openbao-plugin-auth-openhorizon\", \"version\": \"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl --fsSL -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"openbao-plugin-auth-openhorizon\", \"version\": \"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 204 "baoRegisterPlugin" $BAO_ERROR_FILE
 }
 
 baoSecretsEngineCheck() {
-    curl -sS -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/mounts/$BAO_SECRETS_ENGINE_NAME $* 2>$BAO_ERROR_FILE
+    curl -fsSL -w "%{http_code}" -o /dev/null -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/mounts/$BAO_SECRETS_ENGINE_NAME $* 2>$BAO_ERROR_FILE
 }
 
 baoServiceCheck() {
     echo Checking Bao service status, initialization, and seal...
-    httpCode=$(curl -sS -w "%{http_code}" -o $BAO_STATUS_FILE -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/seal-status $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -fsSL -w "%{http_code}" -o $BAO_STATUS_FILE -H Content-Type:application/json -X GET $HZN_BAO_URL/v1/sys/seal-status $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 200 "baoServiceCheck" $BAO_ERROR_FILE
 }
 
 baoUnregisterPlugin() {
     echo Unregistering auth plugin $BAO_AUTH_PLUGIN_EXCHANGE from Bao instance...
-    httpCode=$(curl -sS -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -fsSL -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X DELETE $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 204 "baoUnregisterPlugin" $BAO_ERROR_FILE
 }
 
 # Assumes a secret threshold size of 1
 baoUnseal() {
     echo Bao instance is sealed. Unsealing...
-    httpCode=$(curl -sS -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$BAO_UNSEAL_KEY\"}" $HZN_BAO_URL/v1/sys/unseal $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -fsSL -w "%{http_code}" -o /dev/null -H Content-Type:application/json -X PUT -d "{\"key\": \"$BAO_UNSEAL_KEY\"}" $HZN_BAO_URL/v1/sys/unseal $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 200 "baoUnseal" $BAO_ERROR_FILE
 }
 
 baoInitialize() {
     echo A Bao instance has not been initialized. Initializing...
-    httpCode=$(curl -sS -w "%{http_code}" -o $BAO_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $BAO_SEAL_SECRET_SHARES,\"secret_threshold\": $BAO_SEAL_SECRET_THRESHOLD}" $HZN_BAO_URL/v1/sys/init $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -fsSL -w "%{http_code}" -o $BAO_KEYS_FILE -H Content-Type:application/json -X PUT -d "{\"secret_shares\": $BAO_SEAL_SECRET_SHARES,\"secret_threshold\": $BAO_SEAL_SECRET_THRESHOLD}" $HZN_BAO_URL/v1/sys/init $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 200 "baoInitialize" $BAO_ERROR_FILE
     BAO_ROOT_TOKEN=$(cat $BAO_KEYS_FILE | jq -r '.root_token')
     BAO_UNSEAL_KEY=$(cat $BAO_KEYS_FILE | jq -r '.keys_base64[0]')
@@ -982,7 +1009,8 @@ if [[ $HZN_TRANSPORT == 'https' ]]; then
 
     export CSS_LISTENING_TYPE=secure
 
-    export HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)
+    HZN_MGMT_HUB_CERT=$(cat $CERT_DIR/$CERT_BASE_NAME.crt)
+    export HZN_MGMT_HUB_CERT
 else
     removeKeyAndCert   # so when we mount CERT_DIR to the containers it will be empty
     export CSS_LISTENING_TYPE=unsecure
@@ -994,7 +1022,8 @@ else
 
     # For FDO only.
     createKeyAndCertFDO
-    export HZN_MGMT_HUB_CERT=$(cat "$CERT_DIR/$CERT_BASE_NAME_FDO.crt" | base64)   # needs to be in the environment or docker-compose will complain
+    HZN_MGMT_HUB_CERT=$(cat "$CERT_DIR/$CERT_BASE_NAME_FDO.crt" | base64)   # needs to be in the environment or docker-compose will complain
+    export HZN_MGMT_HUB_CERT
 fi
 
 # For FDO.
@@ -1002,31 +1031,60 @@ export EXCHANGE_INTERNAL_CERT=${HZN_MGMT_HUB_CERT:-N/A}
 
 # Download and process templates from open-horizon/devops
 printf "${CYAN}------- Downloading template files...${NC}\n"
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml docker-compose.yml
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml docker-compose-agbot2.yml
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json $TMP_DIR/exchange-tmpl.json # [DEPRECATED] in v2.124.0+
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json $TMP_DIR/agbot-tmpl.json
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf $TMP_DIR/css-tmpl.conf
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/bao-tmpl.json $TMP_DIR/bao-tmpl.json
+if [[ ! -f ./docker-compose.yml ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml" docker-compose.yml
+fi
+if [[ ! -f ./docker-compose-agbot2 ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/docker-compose-agbot2.yml" docker-compose-agbot2.yml
+fi
+if [[ ! -f ./exchange-tmpl.json ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/exchange-tmpl.json" "$TMP_DIR/exchange-tmpl.json" # [DEPRECATED] in v2.124.0+
+fi
+if [[ ! -f ./agbot-tmpl.json ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/agbot-tmpl.json" "$TMP_DIR/agbot-tmpl.json"
+fi
+if [[ ! -f ./css-tmpl.conf ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/css-tmpl.conf" "$TMP_DIR/css-tmpl.conf"
+fi
+if [[ ! -f ./bao-tmpl.json ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/bao-tmpl.json" "$TMP_DIR/bao-tmpl.json"
+fi
 # Leave a copy of ourself in the current dir for subsequent stop/start commands.
 # If they are running us via ./deploy-mgmt-hub.sh we can't overwrite ourselves (or we get syntax errors), so only do it if we are piped into bash or for some other reason aren't executing the script from the current dir
-if [[ $0 == 'bash' || ! -f deploy-mgmt-hub.sh ]]; then
-    getUrlFile $OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh deploy-mgmt-hub.sh
+if [[ $0 == 'bash' || ! -f ./deploy-mgmt-hub.sh ]]; then
+    getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/deploy-mgmt-hub.sh" deploy-mgmt-hub.sh
     chmod +x deploy-mgmt-hub.sh
 fi
 # also leave a copy of test-mgmt-hub.sh and test-sdo.sh so they can run those afterward, if they want
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-mgmt-hub.sh test-mgmt-hub.sh
-chmod +x test-mgmt-hub.sh
-getUrlFile $OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh test-fdo.sh
-chmod +x test-fdo.sh
+if [[ ! -f ./test-mgmt-hub.sh ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/test-mgmt-hub.sh" test-mgmt-hub.sh
+  chmod +x test-mgmt-hub.sh
+fi
+if [[ ! -f ./test-fdo.sh ]]; then
+  getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/test-fdo.sh" test-fdo.sh
+  chmod +x test-fdo.sh
+fi
 
 echo "Substituting environment variables into template files..."
 export ENVSUBST_DOLLAR_SIGN='$'   # needed for essentially escaping $
 mkdir -p /etc/horizon   # putting the config files here because they are mounted long-term into the containers
-cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json # [DEPRECATED] in v2.124.0+
-cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
-cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
-export BAO_LOCAL_CONFIG=$(cat $TMP_DIR/bao-tmpl.json | envsubst)
+if [[ -f ./exchange-tmpl.json ]]; then
+  envsubst < ./exchange-tmpl.json > /etc/horizon/exchange.json  # [DEPRECATED] in v2.124.0+
+else
+  cat $TMP_DIR/exchange-tmpl.json | envsubst > /etc/horizon/exchange.json  # [DEPRECATED] in v2.124.0+
+fi
+if [[ -f ./agbot-tmpl.json ]]; then
+  envsubst < ./agbot-tmpl.json > /etc/horizon/agbot.json
+else
+  cat $TMP_DIR/agbot-tmpl.json | envsubst > /etc/horizon/agbot.json
+fi
+if [[ -f ./css-tmpl.conf ]]; then
+  envsubst < ./css-tmpl.conf > /etc/horizon/css.conf
+else
+  cat $TMP_DIR/css-tmpl.conf | envsubst > /etc/horizon/css.conf
+fi
+BAO_LOCAL_CONFIG=$(if [[ -f ./bao-tmpl.json ]]; then envsubst < ./bao-tmpl.json; else cat $TMP_DIR/bao-tmpl.json | envsubst; fi)
+export BAO_LOCAL_CONFIG
 baoDownloadAuthOHPlugin
 
 #====================== Start/Stop/Restart/Update ======================
@@ -1164,13 +1222,13 @@ chk $? 'starting docker-compose services'
 # Ensure the exchange is responding
 # Note: wanted to make these aliases to avoid quote/space problems, but aliases don't get inherited to sub-shells. But variables don't get processed again by the shell (but may get separated by spaces), so i think we are ok for the post/put data
 exchangeGet() {
-    curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
+    curl -fsSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
 exchangePost() {
-    curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X POST $* 2>$CURL_ERROR_FILE
+    curl -fsSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X POST $* 2>$CURL_ERROR_FILE
 }
 exchangePut() {
-    curl -sS -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X PUT $* 2>$CURL_ERROR_FILE
+    curl -fsSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X PUT $* 2>$CURL_ERROR_FILE
 }
 
 printf "Waiting for the exchange"
@@ -1422,7 +1480,7 @@ if [[ -z $OH_NO_EXAMPLES ]]; then
     # HZN_EXCHANGE_USER_AUTH and HZN_ORG_ID are set in the section above
     export HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
     rm -rf /tmp/open-horizon/examples   # exchangePublish.sh will clone the examples repo to here
-    curl -sSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_USER_ORG
+    curl -fsSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_USER_ORG
     chk $? 'publishing examples'
 fi
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
