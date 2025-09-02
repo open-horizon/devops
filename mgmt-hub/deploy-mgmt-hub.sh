@@ -206,6 +206,10 @@ export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or 
 export MONGO_PORT=${MONGO_PORT:-27017}
 export MONGO_PROTOCOL=${MONGO_PROTOCOL:-mongo}
 export MONGO_UTILITY=${MONGO_UTILITY:-mongo}
+# MongoDB version 6.x uses a different license than in version 4.0, and is no longer a compliant open source license.
+# Users should evaluate this license change before hand on their own.
+# https://www.mongodb.com/legal/licensing/community-edition
+# Enable at your own risk!
 export MONGO_VERSION_6_ENABLE=${MONGO_VERSION_6_ENABLE:-false}
 if [[ "$MONGO_VERSION_6_ENABLE" == true ]]; then
   CSS_IMAGE_TAG=latest
