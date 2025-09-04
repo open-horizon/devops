@@ -322,49 +322,60 @@ verbose() {
 
 # Echo message and exit
 fatal() {
-    local exitCode=$1
-    # the rest of the args are the message
-    echo "Error:" ${@:2}
-    exit "$exitCode"
+  local exitCode
+  exitCode=$1
+  # the rest of the args are the message
+  echo "Error:" ${@:2}
+  exit "$exitCode"
 }
 
 # Check the exit code passed in and exit if non-zero
 chk() {
-    local exitCode=${1:?}
-    local task=${2:?}
-    local dontExit=$3   # set to 'continue' to not exit for this error
-    if [[ $exitCode == 0 ]]; then return; fi
+  local exitCode
+  exitCode=${1:?}
+  local task
+  task=${2:?}
+  local dontExit
+  dontExit=$3   # set to 'continue' to not exit for this error
+  if [[ $exitCode == 0 ]]; then return; fi
     echo "Error: exit code $exitCode from: $task"
-    if [[ $dontExit != 'continue' ]]; then
-        exit $exitCode
-    fi
+  if [[ $dontExit != 'continue' ]]; then
+    exit "$exitCode"
+  fi
 }
 
 # Check both the exit code and http code passed in and exit if non-zero
 chkHttp() {
-    local exitCode=${1:?}
-    local httpCode=${2:?}
-    local goodHttpCodes=${3:?}   # space or comma separated list of acceptable http codes
-    local task=${4:?}
-    local errorFile=$5   # optional: the file that has the curl error in it
-    local outputFile=$6   # optional: the file that has the curl output in it (which sometimes has the error in it)
-    local dontExit=$7   # optional: set to 'continue' to not exit for this error
-    if [[ -n $errorFile && -f $errorFile && $(wc -c $errorFile | awk '{print $1}') -gt 0 ]]; then
-        task="$task, stderr: $(cat $errorFile)"
+  local exitCode
+  exitCode=${1:?}
+  local httpCode
+  httpCode=${2:?}
+  local goodHttpCodes
+  goodHttpCodes=${3:?}   # space or comma separated list of acceptable http codes
+  local task
+  task=${4:?}
+  local errorFile
+  errorFile=$5   # optional: the file that has the curl error in it
+  local outputFile
+  outputFile=$6   # optional: the file that has the curl output in it (which sometimes has the error in it)
+  local dontExit
+  dontExit=$7   # optional: set to 'continue' to not exit for this error
+  if [[ -n $errorFile && -f $errorFile && $(wc -c "$errorFile" | awk '{print $1}') -gt 0 ]]; then
+    task="$task, stderr: $(cat "$errorFile")"
+  fi
+  chk "$exitCode" "$task"
+  if [[ -n $httpCode && $goodHttpCodes == *$httpCode* ]]; then return; fi
+  # the httpCode was bad, normally in this case the api error msg is in the outputFile
+  if [[ -n $outputFile && -f $outputFile && $(wc -c "$outputFile" | awk '{print $1}') -gt 0 ]]; then
+    task="$task, stdout: $(cat "$outputFile")"
+  fi
+  echo "Error: http code $httpCode from: $task"
+  if [[ $dontExit != 'continue' ]]; then
+    if [[ ! "$httpCode" =~ ^[0-9]+$ ]]; then
+      httpCode=5   # some times httpCode is the curl error msg
     fi
-    chk $exitCode $task
-    if [[ -n $httpCode && $goodHttpCodes == *$httpCode* ]]; then return; fi
-    # the httpCode was bad, normally in this case the api error msg is in the outputFile
-    if [[ -n $outputFile && -f $outputFile && $(wc -c $outputFile | awk '{print $1}') -gt 0 ]]; then
-        task="$task, stdout: $(cat $outputFile)"
-    fi
-    echo "Error: http code $httpCode from: $task"
-    if [[ $dontExit != 'continue' ]]; then
-        if [[ ! "$httpCode" =~ ^[0-9]+$ ]]; then
-            httpCode=5   # some times httpCode is the curl error msg
-        fi
-        exit $httpCode
-    fi
+      exit "$httpCode"
+  fi
 }
 
 isMacOS() {
@@ -384,7 +395,7 @@ isFedora() {
 }
 
 isRedHat8() {
-    if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
+  if [[ "$DISTRO" == 'rhel 8.'* ]] && [[ "${ARCH}" == 'ppc64le' ]]; then
 		return 0
 	else
 		return 1
@@ -392,7 +403,7 @@ isRedHat8() {
 }
 
 isUbuntu18() {
-    if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
+  if [[ "$DISTRO" == 'ubuntu 18.'* ]]; then
 		return 0
 	else
 		return 1
@@ -400,7 +411,7 @@ isUbuntu18() {
 }
 
 isUbuntu2x() {
-    if [[ "$DISTRO" =~ ubuntu\ 2[0-9]\.* ]]; then
+  if [[ "$DISTRO" =~ ubuntu\ 2[0-9]\.* ]]; then
 		return 0
 	else
 		return 1
@@ -408,22 +419,25 @@ isUbuntu2x() {
 }
 
 isDirInPath() {
-    local dir=${1:?}
-    echo $PATH | grep -q -E "(^|:)$dir(:|$)"
+  local dir
+  dir=${1:?}
+  echo "$PATH" | grep -q -E "(^|:)$dir(:|$)"
 }
 
 isWordInString() {   # returns true (0) if the specified word is in the space-separated string
-    local word=${1:?} string=$2
-    if [[ $string =~ (^|[[:space:]])$word($|[[:space:]]) ]]; then
-        return 0
-    else
-        return 1
-    fi
+  local word
+  word=${1:?} string=$2
+  if [[ $string =~ (^|[[:space:]])$word($|[[:space:]]) ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 isDockerContainerRunning() {
-    local container=${1:?}
-    if [[ -n $(docker ps -q --filter name=$container) ]]; then
+  local container
+  container=${1:?}
+  if [[ -n $(docker ps -q --filter name="$container") ]]; then
 		return 0
 	else
 		return 1
@@ -432,30 +446,33 @@ isDockerContainerRunning() {
 
 # Run a command that does not have a good quiet option, so we have to capture the output and only show if an error occurs
 runCmdQuietly() {
-    # all of the args to this function are the cmd and its args
-    if [[  "$VERBOSE" == '1' || "$VERBOSE" == 'true' ]]; then
-        $*
-        chk $? "running: $*"
-    else
-        local output=$($* 2>&1)
-        if [[ $? -ne 0 ]]; then
-            echo "Error running $*: $output"
-            exit 2
-        fi
+  # all of the args to this function are the cmd and its args
+  if [[  "$VERBOSE" == '1' || "$VERBOSE" == 'true' ]]; then
+    $*
+    chk $? "running: $*"
+  else
+    local output
+    output=$($* 2>&1)
+    if [[ $? -ne 0 ]]; then
+      echo "Error running $*: $output"
+      exit 2
     fi
+  fi
 }
 
 # Returns exit code 0 if the specified cmd is in the path
 isCmdInstalled() {
-    local cmd=${1:?}
-    command -v $cmd >/dev/null 2>&1
-    local ret=$?
-    # Special addition for python-based version of docker-compose
-    if [[ $ret -ne 0 && $cmd == "docker-compose" ]]; then
-        ${DOCKER_COMPOSE_CMD} version --short >/dev/null 2>&1
-        ret=$?
-    fi
-    return $ret
+  local cmd
+  cmd=${1:?}
+  command -v "$cmd" >/dev/null 2>&1
+  local ret
+  ret=$?
+  # Special addition for python-based version of docker-compose
+  if [[ $ret -ne 0 && $cmd == "docker-compose" ]]; then
+    ${DOCKER_COMPOSE_CMD} version --short >/dev/null 2>&1
+    ret=$?
+  fi
+  return $ret
 }
 
 # Returns exit code 0 if all of the specified cmds are in the path
@@ -470,17 +487,19 @@ areCmdsInstalled() {
 
 # Checks if docker-compose is installed, and if so, if it is at least this minimum version
 isDockerComposeAtLeast() {
-    local minVersion=${1:?}
-    if ! isCmdInstalled docker-compose; then
-        return 1   # it is not even installed
-    fi
-    # docker-compose is installed, check its version
-    local lowerVersion=$(echo -e "$(${DOCKER_COMPOSE_CMD} version --short)\n$minVersion" | sort -V | head -n1)
-    if [[ $lowerVersion == $minVersion ]]; then
-        return 0   # the installed version was >= minVersion
-    else
-        return 1
-    fi
+  local minVersion
+  minVersion=${1:?}
+  if ! isCmdInstalled docker-compose; then
+    return 1   # it is not even installed
+  fi
+  # docker-compose is installed, check its version
+  local lowerVersion
+  lowerVersion=$(echo -e "$(${DOCKER_COMPOSE_CMD} version --short)\n$minVersion" | sort -V | head -n1)
+  if [[ $lowerVersion == "$minVersion" ]]; then
+    return 0   # the installed version was >= minVersion
+  else
+    return 1
+  fi
 }
 
 # Verify that the prereq commands we need are installed, or exit with error msg
@@ -501,40 +520,45 @@ ensureWeAreRoot() {
 
 # Download a file via a URL
 getUrlFile() {
-    local url=${1:?}
-    local localFile=${2:?}
-    if isWordInString "${url##*/}" "$OH_DONT_DOWNLOAD"; then
-        echo "Skipping download of $url"
-        return
-    fi
-    verbose "Downloading $url ..."
-    if [[ $url == *@* ]]; then
-        # special case for development:
-        scp "$url" "$localFile"
-        chk $? "scp'ing $url"
-    else
-        local httpCode=$(curl -fsSL -w "%{http_code}" -L -o "$localFile" "$url" 2>$CURL_ERROR_FILE)
-        chkHttp $? "$httpCode" 200 "downloading $url" $CURL_ERROR_FILE "$localFile"
-    fi
+  local url
+  url=${1:?}
+  local localFile
+  localFile=${2:?}
+  if isWordInString "${url##*/}" "$OH_DONT_DOWNLOAD"; then
+    echo "Skipping download of $url"
+    return
+  fi
+  verbose "Downloading $url ..."
+  if [[ $url == *@* ]]; then
+    # special case for development:
+    scp "$url" "$localFile"
+    chk $? "scp'ing $url"
+  else
+    local httpCode
+    httpCode=$(curl -fsSL -w "%{http_code}" -L -o "$localFile" "$url" 2>$CURL_ERROR_FILE)
+    chkHttp $? "$httpCode" 200 "downloading $url" $CURL_ERROR_FILE "$localFile"
+  fi
 }
 
 # Always pull when the image tag is latest or testing. For other tags, try to pull, but if the image exists locally, but does not exist in the remote repo, do not report error.
 pullDockerImage() {
-    local imagePath=${1:?}
-    local imageTag=${imagePath##*:}
-    if [[ $imageTag =~ ^(latest|testing)$ || -z $(docker images -q "$imagePath" 2> /dev/null) ]]; then
-        echo "Pulling $imagePath ..."
-        runCmdQuietly docker pull "$imagePath"
-    else
-        # Docker image exists locally. Try to pull, but only exit if pull fails for a reason other than 'not found'
-        echo "Trying to pull $imagePath ..."
-        output=$(docker pull "$imagePath" 2>&1)
-        local output
-        if [[ $? -ne 0 && $output != *'not found'* ]]; then
-            echo "Error running docker pull $imagePath: $output"
-            exit 2
-        fi
+  local imagePath
+  imagePath=${1:?}
+  local imageTag
+  imageTag=${imagePath##*:}
+  if [[ $imageTag =~ ^(latest|testing)$ || -z $(docker images -q "$imagePath" 2> /dev/null) ]]; then
+    echo "Pulling $imagePath ..."
+     runCmdQuietly docker pull "$imagePath"
+  else
+    # Docker image exists locally. Try to pull, but only exit if pull fails for a reason other than 'not found'
+    echo "Trying to pull $imagePath ..."
+    local output
+    output=$(docker pull "$imagePath" 2>&1)
+    if [[ $? -ne 0 && $output != *'not found'* ]]; then
+      echo "Error running docker pull $imagePath: $output"
+      exit 2
     fi
+  fi
 }
 
 # Pull all of the docker images to ensure we have the most recent images locally
@@ -575,20 +599,23 @@ getAllIps() {   # get all of the IP addresses and return them as a comma-separat
 
 # Source the hzn autocomplete file
 add_autocomplete() {
-    local shellFile="${SHELL##*/}"
+    local shellFile
+    shellFile="${SHELL##*/}"
     local autocomplete
 
     if isMacOS; then
-        local autocomplete="/usr/local/share/horizon/hzn_bash_autocomplete.sh"
-        # The default terminal app on mac reads .bash_profile instead of .bashrc . But some 3rd part terminal apps read .bashrc, so update that too, if it exists
-        for rcFile in ~/.${shellFile}_profile ~/.${shellFile}rc; do
-            if [[ -f "$rcFile" ]]; then
-                grep -q -E "^source ${autocomplete}" "$rcFile" 2>/dev/null || echo -e "\nsource ${autocomplete}" >> "$rcFile"
-            fi
-        done
+      local autocomplete
+      autocomplete="/usr/local/share/horizon/hzn_bash_autocomplete.sh"
+      # The default terminal app on mac reads .bash_profile instead of .bashrc . But some 3rd part terminal apps read .bashrc, so update that too, if it exists
+      for rcFile in ~/.${shellFile}_profile ~/.${shellFile}rc; do
+        if [[ -f "$rcFile" ]]; then
+          grep -q -E "^source ${autocomplete}" "$rcFile" 2>/dev/null || echo -e "\nsource ${autocomplete}" >> "$rcFile"
+        fi
+      done
     else   # linux
-        local autocomplete="/etc/bash_completion.d/hzn_bash_autocomplete.sh"
-        grep -q -E "^source ${autocomplete}" "$HOME/.${shellFile}rc" 2>/dev/null || echo -e "\nsource ${autocomplete}" >> "$HOME/.${shellFile}rc"
+      local autocomplete
+      autocomplete="/etc/bash_completion.d/hzn_bash_autocomplete.sh"
+      grep -q -E "^source ${autocomplete}" "$HOME/.${shellFile}rc" 2>/dev/null || echo -e "\nsource ${autocomplete}" >> "$HOME/.${shellFile}rc"
     fi
 }
 
@@ -605,35 +632,38 @@ waitForAgent() {
     done
     echo ''
     if [[ "$success" != 'true' ]]; then
-        local numSeconds=$(( "$AGENT_WAIT_ITERATIONS" * "$AGENT_WAIT_INTERVAL" ))
-        fatal 6 "can not reach the agent (tried for $numSeconds seconds): $(cat $CURL_ERROR_FILE 2>/dev/null)"
+      local numSeconds
+      numSeconds=$(( "$AGENT_WAIT_ITERATIONS" * "$AGENT_WAIT_INTERVAL" ))
+      fatal 6 "can not reach the agent (tried for $numSeconds seconds): $(cat $CURL_ERROR_FILE 2>/dev/null)"
     fi
 }
 
 putOneFileInCss() {
-    local filename=${1:?} objectID=$2 version=$3   # objectID and version are optional
-    if [[ -z $objectID ]]; then
-        objectID=${filename##*/}
-    fi
+  local filename
+  filename=${1:?} objectID=$2 version=$3   # objectID and version are optional
+  if [[ -z $objectID ]]; then
+    objectID=${filename##*/}
+  fi
 
-    echo "Publishing $filename in CSS as public object $objectID in the IBM org..."
-    echo '{ "objectID":"'$objectID'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | $HZN mms -o IBM object publish -m- -f "$filename"
-    chk $? "publishing $filename in CSS as a public object"
+  echo "Publishing $filename in CSS as public object $objectID in the IBM org..."
+  echo '{ "objectID":"'$objectID'", "objectType":"agent_files", "destinationOrgID":"IBM", "version":"'$version'", "public":true }' | $HZN mms -o IBM object publish -m- -f "$filename"
+  chk $? "publishing $filename in CSS as a public object"
 }
 
 isCertForHost() {   # Not currently used!! Return true (0) if the current cert is for the specified ip or host.
-    local ipOrHost=${1:?}
-    currentCert="$CERT_DIR/$CERT_BASE_NAME.crt"
-    if [[ ! -f $currentCert ]]; then
-        return 1   # does not exist
-    fi
-    certCommonName=$(openssl x509 -noout -subject -in $currentCert | awk '{print $NF}')   # $NF gets the last word of the text
-    chk $? "getting common name of cert $currentCert"
-    if [[ $certCommonName == "$ipOrHost" ]]; then
-        return 0
-    else
-        return 1
-    fi
+  local ipOrHost
+  ipOrHost=${1:?}
+  currentCert="$CERT_DIR/$CERT_BASE_NAME.crt"
+  if [[ ! -f $currentCert ]]; then
+    return 1   # does not exist
+  fi
+  certCommonName=$(openssl x509 -noout -subject -in $currentCert | awk '{print $NF}')   # $NF gets the last word of the text
+  chk $? "getting common name of cert $currentCert"
+  if [[ $certCommonName == "$ipOrHost" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 removeKeyAndCert() {
@@ -666,8 +696,8 @@ createKeyAndCert() {   # create in directory $CERT_DIR a self-signed key and cer
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
     chk $? "making directory $CERT_DIR"
     removeKeyAndCert
-    altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
     local altNames
+    altNames="$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')"   # result: IP:127.0.0.1,IP:10.21.42.91,...
     altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
 
     echo "Creating self-signed certificate for these IP addresses: $altNames"
@@ -696,8 +726,8 @@ createKeyAndCertFDO() {   # create in directory $CERT_DIR a certificate named: $
     # Create the certificate that FDO needs
     mkdir -p $CERT_DIR && chmod +r $CERT_DIR   # need to make it readable by the non-root user inside the container
     chk $? "making directory $CERT_DIR"
-    altNames=$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')   # result: IP:127.0.0.1,IP:10.21.42.91,...
     local altNames
+    altNames="$(ip address | grep -o -E "\sinet [^/\s]*" | awk -vORS=,IP: '{ print $2 }' | sed -e 's/^/IP:/' -e 's/,IP:$//')"   # result: IP:127.0.0.1,IP:10.21.42.91,...
     altNames="$altNames,DNS:localhost,DNS:agbot,DNS:exchange-api,DNS:css-api,DNS:fdo-owner-services"   # add the names the containers use to contact each other
 
     echo "Creating self-signed certificate for these IP addresses: $altNames"
@@ -870,7 +900,7 @@ if isUbuntu18 || isUbuntu2x; then
 else   # redhat
     export PKG_MNGR=dnf
     export PKG_MNGR_INSTALL_QY_CMD="install -y -q"
-    export PKG_MNGR_PURGE_CMD="erase -y -q"
+    export PKG_MNGR_PURGE_CMD="remove -y -q"
     export PKG_MNGR_GETTEXT="gettext"
 fi
 
