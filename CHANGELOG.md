@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2025-09-04
+- Fixed reversed variable declarations.
+- Changed remove command in dnf from erase to remove.
+
 ## [] - 2025-09-02
 - Added support for MongoDB v6.x via environment variable toggle.
     - Due to licensing changes after version 4 this will be disabled by default.
