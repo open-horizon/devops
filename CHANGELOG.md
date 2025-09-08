@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2025-09-08
+- Reversed non-backwards compatible changes to compose file.
+- Rewrote Ubuntu installation sections.
+- Attempt to only use EOL versions of compose when everything else fails.
+
 ## [] - 2025-09-04
 - Fixed reversed variable declarations.
 - Changed remove command in dnf from erase to remove.
