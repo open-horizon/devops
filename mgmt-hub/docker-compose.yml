@@ -1,5 +1,5 @@
-
-name: open-horizon
+# Legacy versions of compose do not support name.
+# name: open-horizon
 
 networks:
   horizonnet:
@@ -246,6 +246,9 @@ services:
       retries: 3
     depends_on:
       - exchange-api
+
+# For legacy versions of docker compose only.
+version: '3.9'
 
 # Listing the volumes here makes them persistent across container restarts
 volumes:

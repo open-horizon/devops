@@ -45,8 +45,10 @@ fi
 # Set the correct default value for docker-compose command regarding to architecture
 if [[ $ARCH == "ppc64le" ]]; then
     export DOCKER_COMPOSE_CMD="pipenv run docker-compose"
+elif [[ -n $(docker compose version --short) ]]; then
+  export DOCKER_COMPOSE_CMD="docker compose"
 else
-    export DOCKER_COMPOSE_CMD="docker-compose"
+  export DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
 # Parse cmd line
@@ -464,8 +466,8 @@ runCmdQuietly() {
 isCmdInstalled() {
   local cmd
   cmd=${1:?}
-  command -v "$cmd" >/dev/null 2>&1
   local ret
+  which "$cmd" >/dev/null 2>&1
   ret=$?
   # Special addition for python-based version of docker-compose
   if [[ $ret -ne 0 && $cmd == "docker-compose" ]]; then
@@ -478,7 +480,7 @@ isCmdInstalled() {
 # Returns exit code 0 if all of the specified cmds are in the path
 areCmdsInstalled() {
     for c in $*; do
-        if ! isCmdInstalled $c; then
+        if ! isCmdInstalled "$c"; then
             return 1
         fi
     done
@@ -495,7 +497,7 @@ isDockerComposeAtLeast() {
   # docker-compose is installed, check its version
   local lowerVersion
   lowerVersion=$(echo -e "$(${DOCKER_COMPOSE_CMD} version --short)\n$minVersion" | sort -V | head -n1)
-  if [[ $lowerVersion == "$minVersion" ]]; then
+  if [[ $lowerVersion -gt "$minVersion" ]]; then
     return 0   # the installed version was >= minVersion
   else
     return 1
@@ -791,7 +793,7 @@ baoRegisterPlugin() {
     local hash=
     echo Registering auth plugin $BAO_AUTH_PLUGIN_EXCHANGE to Bao instance...
     baoPluginHash
-    httpCode=$(curl --fsSL -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"openbao-plugin-auth-openhorizon\", \"version\": \"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
+    httpCode=$(curl -fsSL -w "%{http_code}" -H "X-Vault-Token: $BAO_ROOT_TOKEN" -H Content-Type:application/json -X PUT -d "{\"sha256\": \"$hash\", \"command\": \"openbao-plugin-auth-openhorizon\", \"version\": \"$OPENBAO_PLUGIN_AUTH_OPENHORIZON_VERSION\"}" $HZN_BAO_URL/v1/sys/plugins/catalog/auth/$BAO_AUTH_PLUGIN_EXCHANGE $* 2>$BAO_ERROR_FILE)
     chkHttp $? $httpCode 204 "baoRegisterPlugin" $BAO_ERROR_FILE
 }
 
@@ -882,8 +884,10 @@ if isMacOS; then
     export VOLUME_MODE=cached   # supposedly helps avoid 100% cpu consumption bug https://github.com/docker/for-mac/issues/3499
 else   # ubuntu and redhat
     HZN=hzn   # this deb horizon-cli pkg puts it in /usr/bin so it is always in the path
-    export ETC=/etc
-    export VOLUME_MODE=ro
+    ETC=/etc
+    export ETC
+    VOLUME_MODE=ro
+    export VOLUME_MODE
 fi
 
 # TODO: Future directory for TLS certificates and keys.
@@ -894,8 +898,8 @@ fi
 # Set OS-dependent package manager settings in Linux
 if isUbuntu18 || isUbuntu2x; then
     export PKG_MNGR=apt-get
-    export PKG_MNGR_INSTALL_QY_CMD="install -yqf"
-    export PKG_MNGR_PURGE_CMD="purge -yq"
+    export PKG_MNGR_INSTALL_QY_CMD="install -qqf"
+    export PKG_MNGR_PURGE_CMD="purge -qq"
     export PKG_MNGR_GETTEXT="gettext-base"
 else   # redhat
     export PKG_MNGR=dnf
@@ -931,39 +935,54 @@ if isMacOS; then
         fatal 2 "these commands are required: jq, envsubst (installed via the gettext package), socat. Install them via https://brew.sh/ or https://www.macports.org/ ."
     fi
 else   # ubuntu and redhat
-    echo "Updating ${PKG_MNGR} package index..."
-    runCmdQuietly ${PKG_MNGR} update -q -y
+    echo "Updating packages..."
+    runCmdQuietly ${PKG_MNGR} update -qq
     echo "Installing prerequisites, this could take a minute..."
     if [[ $HZN_TRANSPORT == 'https' ]]; then
         optionalOpensslPkg='openssl'
     fi
     runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} jq ${PKG_MNGR_GETTEXT} make $optionalOpensslPkg
 
+    minVersion=1.29.2
+    if [[ -f /usr/local/bin/docker-compose && $(${DOCKER_COMPOSE_CMD} version --short) == "$minVersion" ]]
+    then
+      echo "Removing v1 docker compose binary..."
+      sudo -En rm -rf /usr/local/bin/docker-compose || true >/dev/null
+    fi
     # If docker isn't installed, do that
     if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
+        sudo -En usermod -aG docker "$USER"
         if isFedora; then
           ${PKG_MNGR} install -y moby-engine docker-compose
           chk $? 'installing docker and compose'
           systemctl --now --quiet enable docker
           chk $? 'starting docker'
         elif isUbuntu18 || isUbuntu2x; then
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-          chk $? 'adding docker repository key'
-          add-apt-repository "deb [arch=${ARCH_DEB}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-          chk $? 'adding docker repository'
-          if [[ $ARCH == "amd64" ]]; then
-            ${PKG_MNGR} install -y docker-ce docker-ce-cli containerd.io
-          elif [[ $ARCH == "ppc64le" ]]; then
-            if isUbuntu18; then
-              ${PKG_MNGR} install -y docker-ce containerd.io
-            else # Ubuntu 20
-              ${PKG_MNGR} install -y docker.io containerd
-            fi
-          else
-            fatal 1 "hardware plarform ${ARCH} is not supported yet"
-          fi
+          export DEBIAN_FRONTEND=noninteractive
+          sudo -En apt-get install -qq ca-certificates containerd curl docker.io docker-buildx docker-compose-v2
+          export DOCKER_COMPOSE_CMD="docker compose"
+          alias docker-compose="docker compose --compatibility " "$@"
+          #>/dev/null
           chk $? 'installing docker'
+          # Flaky systemd services....
+          sleep 5
+          if [[ $(sudo -En systemctl is-active docker) == inactive ]]
+          then
+            sudo -En systemctl -f --now --quiet enable docker
+            chk $? 'starting docker'
+          elif [[ $(sudo -En systemctl is-active docker) != active || $(sudo -En systemctl show docker) == failed ]]
+          then
+            sudo -En systemctl --quiet reset-failed docker
+            sudo -En systemctl --quiet start docker
+            # sudo -En systemctl show docker
+            chk $? 'starting docker'
+          else
+            echo "Docker is already active..."
+          fi
+          # The default builder for Buildx does not load images locally out-of-the-box. This creates and uses one that does.
+          # The Examples section of the script will fail to find images without this.
+          sudo -En sudo docker buildx create --name openhorizon --driver-opt=default-load=true --use --bootstrap >/dev/null
         else # redhat (ppc64le)
           OP_REPO_ID="Open-Power"
           IS_OP_REPO_ID=$(${PKG_MNGR} repolist ${OP_REPO_ID} | grep ${OP_REPO_ID} | cut -d" " -f1)
@@ -987,13 +1006,13 @@ EOFREPO
         fi
    fi
 
-    minVersion=1.29.2
-    if ! isDockerComposeAtLeast $minVersion; then
+
+    if [[ ! $(docker compose version --short) && ! -f /usr/local/bin/docker-compose ]]; then
         if isCmdInstalled docker-compose; then
             fatal 2 "Need at least docker-compose $minVersion. A down-level version is currently installed, preventing us from installing the latest version. Uninstall docker-compose and rerun this script."
         fi
         echo "docker-compose is not installed or not at least version $minVersion, installing/upgrading it..."
-        if [[ "${ARCH}" == "amd64" ]]; then
+        if [[ "${ARCH}" == "amd64" || "${ARCH}" == "x86_64" ]]; then
             # Install docker-compose from its github repo, because that is the only way to get a recent enough version
             curl --progress-bar -L "https://github.com/docker/compose/releases/download/${minVersion}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             chk $? 'downloading docker-compose'
@@ -1151,25 +1170,53 @@ if [[ -n "$STOP" ]]; then
         fi
     elif [[ -z $OH_NO_AGENT  ]]; then   # ubuntu and redhat
         echo "Stopping the Horizon agent..."
-        systemctl stop horizon
+        sudo -En systemctl stop horizon >/dev/null
         if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon agent and CLI..."
-            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli
+            if sudo -En ${PKG_MNGR} list --installed horizon horizon-cli >/dev/null || \
+               sudo -En apt list --installed horizon horizon-cli >/dev/null
+            then
+              echo "Uninstalling the Horizon agent and CLI..."
+              sudo -En ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli >/dev/null
+            else
+              echo "Horizon agent and CLI are not installed..."
+            fi
         fi
     else   # ubuntu and redhat, but only cli
         if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon CLI..."
-            runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon-cli
+            if sudo -En ${PKG_MNGR} list --installed horizon-cli || \
+               sudo -En apt list --installed horizon-cli >/dev/null
+            then
+              echo "Uninstalling the Horizon CLI..."
+              sudo -En ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon-cli >/dev/null
+            else
+              echo "Horizon CLI is not installed..."
+            fi
         fi
     fi
 
-    if [[ -n "$PURGE" ]]; then
-        echo "Stopping Horizon management hub services and deleting their persistent volumes..."
-        purgeFlag='--volumes'
+    if [[ -n "$PURGE" ]]
+    then
+      echo "Stopping Horizon management hub services and deleting their persistent volumes..."
+      if [[ $KEEP_DOCKER_IMAGES != 'true' ]]
+      then
+        echo "Removing Open-horizon Docker images..."
+        if [[ -f /usr/local/bin/docker-compose && $(${DOCKER_COMPOSE_CMD} version --short) == "$minVersion" ]]
+        then
+          # Compatibility for EOL versions of docker compose.
+          ${DOCKER_COMPOSE_CMD} down --volumes
+          runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG} ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
+        else
+          ${DOCKER_COMPOSE_CMD} down --volumes --remove-orphans --rmi all
+          docker volume prune -af
+        fi
+      else
+        ${DOCKER_COMPOSE_CMD} down --volumes --remove-orphans
+        docker volume prune -af
+      fi
     else
-        echo "Stopping Horizon management hub services..."
+      echo "Stopping Horizon management hub services..."
+      ${DOCKER_COMPOSE_CMD} down
     fi
-    ${DOCKER_COMPOSE_CMD} down $purgeFlag
 
     if [[ -n "$PURGE" ]]; then
         removeKeyAndCert
@@ -1178,11 +1225,6 @@ if [[ -n "$STOP" ]]; then
           # Remove Bao instance
           #rm -dfr ${ETC}/bao
         #fi
-    fi
-
-    if [[ -n "$PURGE" && $KEEP_DOCKER_IMAGES != 'true' ]]; then   # KEEP_DOCKER_IMAGES is a hidden env var for convenience while developing this script
-        echo "Removing Open-horizon Docker images..."
-        runCmdQuietly docker rmi ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG} ${BAO_IMAGE_NAME}:${BAO_IMAGE_TAG} ${FDO_OWN_SVC_IMAGE_NAME}:${FDO_OWN_SVC_IMAGE_TAG} ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG} ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG} ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG} ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG} ${SDO_IMAGE_NAME}:${SDO_IMAGE_TAG} ${VAULT_IMAGE_NAME}:${VAULT_IMAGE_TAG}
     fi
     exit
 fi
