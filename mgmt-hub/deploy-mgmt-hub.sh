@@ -950,6 +950,13 @@ else   # ubuntu and redhat
       sudo -En rm -rf /usr/local/bin/docker-compose || true >/dev/null
     fi
     # If docker isn't installed, do that
+    if docker compose version --short; then
+      if [[ ! -f ~/.bash_aliases ]] || ! grep -q "alias docker-compose=" ~/.bash_aliases; then
+        echo 'alias docker-compose="docker compose --compatibility"' >> ~/.bash_aliases
+        # shellcheck source=/home/${USER}/.bash_aliases
+        . ~/.bash_aliases
+      fi
+    fi
     if ! isCmdInstalled docker; then
         echo "Docker is required, installing it..."
         sudo -En usermod -aG docker "$USER"
@@ -962,7 +969,11 @@ else   # ubuntu and redhat
           export DEBIAN_FRONTEND=noninteractive
           sudo -En apt-get install -qq ca-certificates containerd curl docker.io docker-buildx docker-compose-v2
           export DOCKER_COMPOSE_CMD="docker compose"
-          alias docker-compose="docker compose --compatibility " "$@"
+          if [[ ! -f ~/.bash_aliases ]] || ! grep -q "alias docker-compose=" ~/.bash_aliases; then
+            echo 'alias docker-compose="docker compose --compatibility"' >> ~/.bash_aliases
+            # shellcheck source=/home/${USER}/.bash_aliases
+            . ~/.bash_aliases
+          fi
           #>/dev/null
           chk $? 'installing docker'
           # Flaky systemd services....
@@ -1237,7 +1248,11 @@ fi
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
     printf "${CYAN}------- Starting Horizon services...${NC}\n"
-    pullImages
+    if [[ ! $(docker compose version --short) && -f /usr/local/bin/docker-compose ]]; then
+      pullImages
+    else
+      docker compose pull --include-deps
+    fi
     ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'starting docker-compose services'
 
@@ -1255,7 +1270,11 @@ fi
 # Run 'docker-compose up ...' again so any mgmt hub containers will be updated
 if [[ -n "$UPDATE" ]]; then
     printf "${CYAN}------- Updating management hub containers...${NC}\n"
-    pullImages
+    if [[ ! $(docker compose version --short) && -f /usr/local/bin/docker-compose ]]; then
+      pullImages
+    else
+      docker compose pull --include-deps
+    fi
     ${DOCKER_COMPOSE_CMD} up -d --no-build
     chk $? 'updating docker-compose services'
     exit
@@ -1285,7 +1304,11 @@ fi
 printf "${CYAN}------- Downloading/starting Horizon management hub services...${NC}\n"
 echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
-pullImages
+if [[ ! $(docker compose version --short) && -f /usr/local/bin/docker-compose ]]; then
+  pullImages
+else
+  docker compose pull --include-deps
+fi
 
 echo "Starting management hub containers..."
 ${DOCKER_COMPOSE_CMD} up -d --no-build

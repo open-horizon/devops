@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [] - 2025-09-17
+- Compose alias is saved to bash_aliases to survive reboot.
+
 ## [] - 2025-09-08
 - Reversed non-backwards compatible changes to compose file.
 - Rewrote Ubuntu installation sections.
