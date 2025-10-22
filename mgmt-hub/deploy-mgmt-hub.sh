@@ -16,11 +16,11 @@ Deploy the Open Horizon management hub services, agent, and CLI on this host. Cu
 
 Flags:
   -c <config-file>   A config file with lines in the form variable=value that set any of the environment variables supported by this script. Takes precedence over the same variables passed in through the environment.
-  -A    Do not install the horizon agent package. (It will still install the horizon-cli package.) Without this flag, it will install and register the horizon agent (as well as all of the management hub services).
-  -R    Skip registering the edge node. If -A is not specified, it will install the horizon agent.
-  -E    Skip loading the horizon example services, policies, and patterns.
+  -A    Do not install the open horizon agent package. (It will still install the horizon-cli package.) Without this flag, it will install and register the open horizon agent (as well as all of the management hub services).
+  -R    Skip registering the edge node. If -A is not specified, it will install the open horizon agent.
+  -E    Skip loading the open horizon example services, policies, and patterns.
   -S    Stop the management hub services and agent (instead of starting them). This flag is necessary instead of you simply running 'docker-compose down' because docker-compose.yml contains environment variables that must be set.
-  -P    Purge (delete) the persistent volumes and images of the Horizon services and uninstall the Horizon agent. Can only be used with -S.
+  -P    Purge (delete) the persistent volumes and images of the Open Horizon services and uninstall the Open Horizon agent. Can only be used with -S.
   -s    Start the management hub services and agent, without installing software or creating configuration. Intended to be run to restart the services and agent at some point after you have stopped them using -S. (If you want to change the configuration, run this script without any flags.)
   -u    Update any container whose specified version is not currently running.
   -r <container>   Have docker-compose restart the specified container.
@@ -225,7 +225,7 @@ export EXCHANGE_INTERNAL_INTERVAL=${EXCHANGE_INTERNAL_INTERVAL:-5}   # the numbe
 export EXCHANGE_INTERNAL_RETRIES=${EXCHANGE_INTERNAL_RETRIES:-12}   # the maximum number of times to try connecting to the exchange during startup to verify the connection info
 export EXCHANGE_INTERNAL_URL=${EXCHANGE_INTERNAL_URL:-http://exchange-api:8080/v1}
 export FDO_GET_CFG_FILE_FROM=${FDO_GET_CFG_FILE_FROM:-css:}   # or can be set to 'agent-install.cfg' to use the file FDO creates (which doesn't include HZN_AGBOT_URL)
-export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the horizon pkgs and agent-install.sh from.
+export FDO_GET_PKGS_FROM=${FDO_GET_PKGS_FROM:-https://github.com/open-horizon/anax/releases/latest/download}   # where the FDO container gets the open horizon pkgs and agent-install.sh from.
 export FDO_OCS_DB_CONTAINER_DIR=${FDO_OCS_DB_CONTAINER_DIR:-/home/fdouser/ocs/config/db}
 export FDO_OWN_COMP_SVC_PORT=${FDO_OWN_COMP_SVC_PORT:-9008}
 export FDO_OWN_SVC_AUTH=${FDO_OWN_SVC_AUTH:-apiUser:$(generateToken 30)}
@@ -921,7 +921,7 @@ if ! isFedora && ! isMacOS && ! isUbuntu18 && ! isUbuntu2x && ! isRedHat8; then
     fatal 1 "the host must be Fedora 35+ or macOS or Red Hat 8.x (ppc64le) or Ubuntu 18.x (amd64, ppc64le) or Ubuntu 2x.x (amd64, ppc64le)"
 fi
 
-printf "${CYAN}------- Checking input and initializing...${NC}\n"
+printf "${CYAN}------- Checking input and initializing ...${NC}\n"
 confirmCmds grep awk curl   # these should be automatically available on all the OSes we support
 echo "Management hub services will listen on ${HZN_TRANSPORT}://$HZN_LISTEN_IP"
 
@@ -1090,7 +1090,7 @@ fi
 export EXCHANGE_INTERNAL_CERT=${HZN_MGMT_HUB_CERT:-N/A}
 
 # Download and process templates from open-horizon/devops
-printf "${CYAN}------- Downloading template files...${NC}\n"
+printf "${CYAN}------- Downloading template files ...${NC}\n"
 if [[ ! -f ./docker-compose.yml ]]; then
   getUrlFile "$OH_DEVOPS_REPO/mgmt-hub/docker-compose.yml" docker-compose.yml
 fi
@@ -1160,7 +1160,7 @@ fi
 
 # Bring down the agent and the mgmt hub services
 if [[ -n "$STOP" ]]; then
-    printf "${CYAN}------- Stopping Horizon services...${NC}\n"
+    printf "${CYAN}------- Stopping Horizon services ...${NC}\n"
     # Unregister if necessary
     if [[ $($HZN node list 2>&1 | jq -r '.configstate.state' 2>&1) == 'configured' ]]; then
         $HZN unregister -f
@@ -1172,15 +1172,15 @@ if [[ -n "$STOP" ]]; then
             /usr/local/bin/horizon-container stop
         fi
         if [[ -n "$PURGE" ]]; then
-            echo "Uninstalling the Horizon CLI..."
+            echo "Uninstalling the Open Horizon CLI..."
             /usr/local/bin/horizon-cli-uninstall.sh -y   # removes the content of the horizon-cli pkg
             if [[ -z $OH_NO_AGENT ]]; then
-                echo "Removing the Horizon agent image..."
+                echo "Removing the Open Horizon agent image..."
                 runCmdQuietly docker rmi openhorizon/amd64_anax:$HC_DOCKER_TAG
             fi
         fi
     elif [[ -z $OH_NO_AGENT  ]]; then   # ubuntu and redhat
-        echo "Stopping the Horizon agent..."
+        echo "Stopping the Open Horizon agent..."
         sudo -En systemctl stop horizon >/dev/null
         if [[ -n "$PURGE" ]]; then
             if sudo -En ${PKG_MNGR} list --installed horizon horizon-cli >/dev/null || \
@@ -1189,7 +1189,7 @@ if [[ -n "$STOP" ]]; then
               echo "Uninstalling the Horizon agent and CLI..."
               sudo -En ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon horizon-cli >/dev/null
             else
-              echo "Horizon agent and CLI are not installed..."
+              echo "Open Horizon agent and CLI are not installed..."
             fi
         fi
     else   # ubuntu and redhat, but only cli
@@ -1197,20 +1197,20 @@ if [[ -n "$STOP" ]]; then
             if sudo -En ${PKG_MNGR} list --installed horizon-cli || \
                sudo -En apt list --installed horizon-cli >/dev/null
             then
-              echo "Uninstalling the Horizon CLI..."
+              echo "Uninstalling the Open Horizon CLI..."
               sudo -En ${PKG_MNGR} ${PKG_MNGR_PURGE_CMD} horizon-cli >/dev/null
             else
-              echo "Horizon CLI is not installed..."
+              echo "Open Horizon CLI is not installed..."
             fi
         fi
     fi
 
     if [[ -n "$PURGE" ]]
     then
-      echo "Stopping Horizon management hub services and deleting their persistent volumes..."
+      echo "Stopping Open Horizon management hub services and deleting their persistent volumes..."
       if [[ $KEEP_DOCKER_IMAGES != 'true' ]]
       then
-        echo "Removing Open-horizon Docker images..."
+        echo "Removing Open horizon Docker images..."
         if [[ -f /usr/local/bin/docker-compose && $(${DOCKER_COMPOSE_CMD} version --short) == "$minVersion" ]]
         then
           # Compatibility for EOL versions of docker compose.
@@ -1225,7 +1225,7 @@ if [[ -n "$STOP" ]]; then
         docker volume prune -af
       fi
     else
-      echo "Stopping Horizon management hub services..."
+      echo "Stopping Open Horizon management hub services..."
       ${DOCKER_COMPOSE_CMD} down
     fi
 
@@ -1247,7 +1247,7 @@ fi
 
 # Start the mgmt hub services and agent (use existing configuration)
 if [[ -n "$START" ]]; then
-    printf "${CYAN}------- Starting Horizon services...${NC}\n"
+    printf "${CYAN}------- Starting Open Horizon services ...${NC}\n"
     if [[ ! $(docker compose version --short) && -f /usr/local/bin/docker-compose ]]; then
       pullImages
     else
@@ -1257,7 +1257,7 @@ if [[ -n "$START" ]]; then
     chk $? 'starting docker-compose services'
 
     if [[ -z $OH_NO_AGENT ]]; then
-        echo "Starting the Horizon agent..."
+        echo "Starting the Open Horizon agent..."
         if isMacOS; then
             /usr/local/bin/horizon-container start
         else   # ubuntu and redhat
@@ -1269,7 +1269,7 @@ fi
 
 # Run 'docker-compose up ...' again so any mgmt hub containers will be updated
 if [[ -n "$UPDATE" ]]; then
-    printf "${CYAN}------- Updating management hub containers...${NC}\n"
+    printf "${CYAN}------- Updating management hub containers ...${NC}\n"
     if [[ ! $(docker compose version --short) && -f /usr/local/bin/docker-compose ]]; then
       pullImages
     else
@@ -1285,7 +1285,7 @@ if [[ -n "$RESTART" ]]; then
     if [[ $(( ${START:-0} + ${STOP:-0} + ${UPDATE:-0} )) -gt 0 ]]; then
         fatal 1 "-s or -S or -u cannot be specified with -r"
     fi
-    printf "${CYAN}------- Restarting the $RESTART container...${NC}\n"
+    printf "${CYAN}------- Restarting the $RESTART container ...${NC}\n"
     ${DOCKER_COMPOSE_CMD} restart -t 10 "$RESTART"   #todo: do not know if this will work if there are 2 agbots replicas running
     exit
 fi
@@ -1301,7 +1301,7 @@ if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
 fi
 
 # Start mgmt hub services
-printf "${CYAN}------- Downloading/starting Horizon management hub services...${NC}\n"
+printf "${CYAN}------- Downloading/starting Open Horizon management hub services ...${NC}\n"
 echo "Downloading management hub docker images..."
 # Even though docker-compose will pull these, it won't pull again if it already has a local copy of the tag but it has been updated on docker hub
 if [[ ! $(docker compose version --short) && -f /usr/local/bin/docker-compose ]]; then
@@ -1320,7 +1320,8 @@ exchangeGet() {
     curl -fsSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE $* 2>$CURL_ERROR_FILE
 }
 exchangePost() {
-    curl -fsSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X POST $* 2>$CURL_ERROR_FILE
+    # Removed -f argument to continue on a http 400 bad input response.
+    curl -sSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X POST $* 2>$CURL_ERROR_FILE
 }
 exchangePut() {
     curl -fsSL -w "%{http_code}" $EXCH_CERT_ARG -u "root/root:$EXCHANGE_ROOT_PW" -o $CURL_OUTPUT_FILE -H Content-Type:application/json -X PUT $* 2>$CURL_ERROR_FILE
@@ -1347,7 +1348,7 @@ fi
 
 # Create exchange resources
 # Note: in all of the checks below to see if the resource exists, we don't handle all of the error possibilities, because we'll catch them when we try to create the resource
-printf "${CYAN}------- Creating the user org, and the admin user in both orgs...${NC}\n"
+printf "${CYAN}------- Creating the user org, and the admin user in both orgs ...${NC}\n"
 
 # Create the hub admin in the root org and the admin user in system org
 echo "Creating exchange hub admin user, and the admin user and agbot in the system org..."
@@ -1384,20 +1385,13 @@ if [[ $HZN_TRANSPORT == http ]]; then
     ${DOCKER_COMPOSE_CMD} exec -T -e BAO_TOKEN=$BAO_ROOT_TOKEN bao bao write -address=$HZN_TRANSPORT://0.0.0.0:8200 auth/openhorizon/config url=$HZN_TRANSPORT://exchange-api:8080/v1 token=$BAO_ROOT_TOKEN </dev/null
 fi
 
-printf "${CYAN}------- Creating an agbot in the exchange...${NC}\n"
+printf "${CYAN}------- Creating an agbot in the exchange ...${NC}\n"
 # Create or update the agbot in the system org, and configure it with the pattern and deployment policy orgs
 #if [[ $(exchangeGet $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID) == 200 ]]; then
 #    restartAgbot='true'   # we may be changing its token, so need to restart it. (If there is initially no agbot resource, the agbot will just wait until it appears)
 #fi
 httpCode=$(exchangePut -d "{\"token\":\"$AGBOT_TOKEN\",\"name\":\"agbot\",\"publicKey\":\"\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID)
-chkHttp $? $httpCode 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
-httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns)
-chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
-httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_USER_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns)
-chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
-httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"businessPol\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols)
-chkHttp $? $httpCode 201,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
-
+chkHttp $? "$httpCode" 201 "creating/updating /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
 
 # Bao needs the Agbot to restart everytime there is a setup or configuration change.
 # Agbot will enter non-secrets mode if Bao is not working.
@@ -1421,15 +1415,15 @@ else
 fi
 
 # Install agent and CLI (CLI is needed for exchangePublish.sh in next step)
-printf "${CYAN}------- Downloading/installing/configuring Horizon agent and CLI...${NC}\n"
-echo "Downloading the Horizon agent and CLI packages..."
+printf "${CYAN}------- Downloading/installing/configuring Open Horizon agent and CLI ...${NC}\n"
+echo "Downloading the Open Horizon agent and CLI packages..."
 mkdir -p $TMP_DIR/pkgs
 rm -rf $TMP_DIR/pkgs/*   # get rid of everything so we can safely wildcard instead of having to figure out the version
 if isMacOS; then
     getUrlFile $OH_ANAX_RELEASES/$OH_ANAX_MAC_PKG_TAR $TMP_DIR/pkgs/$OH_ANAX_MAC_PKG_TAR
     tar -zxf $TMP_DIR/pkgs/$OH_ANAX_MAC_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli-2.27.0.pkg
     chk $? 'extracting pkg tar file'
-    echo "Installing the Horizon CLI package..."
+    echo "Installing the Open Horizon CLI package..."
     sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $TMP_DIR/pkgs/horizon-cli.crt
     sudo installer -pkg $TMP_DIR/pkgs/horizon-cli-*.pkg -target /
     chk $? 'installing macos horizon-cli pkg'
@@ -1440,10 +1434,10 @@ else   # ubuntu and redhat
         tar -zxf $TMP_DIR/pkgs/$OH_ANAX_DEB_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.deb
         chk $? 'extracting pkg tar file'
         if [[ -z $OH_NO_AGENT ]]; then
-            echo "Installing the Horizon agent and CLI packages..."
+            echo "Installing the Open Horizon agent and CLI packages..."
             horizonPkgs=$(ls $TMP_DIR/pkgs/horizon*.deb)
         else   # only horizon-cli
-            echo "Installing the Horizon CLI package..."
+            echo "Installing the Open Horizon CLI package..."
             horizonPkgs=$(ls $TMP_DIR/pkgs/horizon-cli*.deb)
         fi
         runCmdQuietly ${PKG_MNGR} ${PKG_MNGR_INSTALL_QY_CMD} $horizonPkgs
@@ -1456,12 +1450,12 @@ else   # ubuntu and redhat
           tar -zxf $TMP_DIR/pkgs/$OH_ANAX_RPM_PKG_TAR -C $TMP_DIR/pkgs   # will extract files like: horizon-cli_2.27.0_amd64.rpm
         fi
         chk $? 'extracting pkg tar file'
-        echo "Installing the Horizon agent and CLI packages..."
+        echo "Installing the Open Horizon agent and CLI packages..."
         if [[ -z $OH_NO_AGENT ]]; then
-            echo "Installing the Horizon agent and CLI packages..."
+            echo "Installing the Open Horizon agent and CLI packages..."
             horizonPkgs="horizon-cli horizon"
         else   # only horizon-cli
-            echo "Installing the Horizon CLI package..."
+            echo "Installing the Open Horizon CLI package..."
             horizonPkgs="horizon-cli"
         fi
         for pkg in $horizonPkgs
@@ -1484,7 +1478,7 @@ add_autocomplete
 # Configure the agent/CLI
 export HZN_EXCHANGE_USER_AUTH="root/root:$EXCHANGE_ROOT_PW"
 export HZN_ORG_ID=$EXCHANGE_SYSTEM_ORG
-echo "Configuring the Horizon agent and CLI..."
+echo "Configuring the Open Horizon agent and CLI..."
 if isMacOS; then
     if [[ $HZN_LISTEN_IP =~ ^(127.0.0.1|localhost|0.0.0.0)$ ]]; then
         THIS_HOST_LISTEN_IP=host.docker.internal  # so the agent in container can reach the host's localhost
@@ -1525,11 +1519,11 @@ if [[ -z $OH_NO_AGENT ]]; then
     # start or restart the agent
     if isMacOS; then
         if isDockerContainerRunning horizon1; then
-            echo "Restarting the Horizon agent container..."
+            echo "Restarting the Open Horizon agent container..."
             /usr/local/bin/horizon-container update
             chk $? 'restarting agent'
         else
-            echo "Starting the Horizon agent container..."
+            echo "Starting the Open Horizon agent container..."
             /usr/local/bin/horizon-container start
             chk $? 'starting agent'
         fi
@@ -1563,26 +1557,42 @@ fi
 putOneFileInCss $TMP_DIR/agent-install.cfg
 
 if [[ ! -f "$HOME/.hzn/keys/service.private.key" || ! -f "$HOME/.hzn/keys/service.public.pem" ]]; then
-    echo "Creating a Horizon developer key pair..."
+    echo "Creating a Open Horizon developer key pair..."
     $HZN key create -f 'OpenHorizon' 'open-horizon@lfedge.org'   # Note: that is not a real email address yet
     chk $? 'creating developer key pair'
 fi
 
 if [[ -z $OH_NO_EXAMPLES ]]; then
     # Prime exchange with horizon examples
-    printf "${CYAN}------- Installing Horizon example services, policies, and patterns...${NC}\n"
+    printf "${CYAN}------- Installing Open Horizon example services, policies, and patterns ...${NC}\n"
     export EXCHANGE_ROOT_PASS="$EXCHANGE_ROOT_PW"
     # HZN_EXCHANGE_USER_AUTH and HZN_ORG_ID are set in the section above
     export HZN_EXCHANGE_URL=${HZN_TRANSPORT}://${THIS_HOST_LISTEN_IP}:$EXCHANGE_PORT/v1
     rm -rf /tmp/open-horizon/examples   # exchangePublish.sh will clone the examples repo to here
     curl -fsSL $OH_EXAMPLES_REPO/tools/exchangePublish.sh | bash -s -- -c $EXCHANGE_USER_ORG
     chk $? 'publishing examples'
+
+    printf "${CYAN}------- Assigning Agreement Bot to manage Open Horizon example deloyments ...${NC}\n"
+    # http 400 bad input, more than likely the deployment [pattern/policy] does not exist, failing verification check.
+    # http 409 conflict, this deployment has already been assigned for management to this agreement bot.
+    httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_SYSTEM_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns)
+    chkHttp $? "$httpCode" 201,400,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+    httpCode=$(exchangePost -d "{\"patternOrgid\":\"$EXCHANGE_USER_ORG\",\"pattern\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns)
+    chkHttp $? "$httpCode" 201,400,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/patterns" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+    httpCode=$(exchangePost -d "{\"businessPolOrgid\":\"$EXCHANGE_USER_ORG\",\"businessPol\":\"*\",\"nodeOrgid\":\"$EXCHANGE_USER_ORG\"}" $HZN_EXCHANGE_URL/orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols)
+    chkHttp $? "$httpCode" 201,400,409 "adding /orgs/$EXCHANGE_SYSTEM_ORG/agbots/$AGBOT_ID/businesspols" $CURL_ERROR_FILE $CURL_OUTPUT_FILE
+else
+  printf "${YELLOW}------- Skip publishing example deployments and services ...${NC}\n"
+  echo "Remember to assign an Agreement Bot to manage your deployments!"
+  echo "See \`hzn exchange agbot addpa --help\` for assigning management of deployment patterns"
+  echo "See \`hzn exchange agbot addpo --help\` for assigning management of deployment policies"
 fi
+
 unset HZN_EXCHANGE_USER_AUTH HZN_ORG_ID HZN_EXCHANGE_URL   # need to set them differently for the registration below
 
 if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
     # Register the agent
-    printf "${CYAN}------- Creating and registering the edge node with policy to run the helloworld Horizon example...${NC}\n"
+    printf "${CYAN}------- Creating and registering the edge node with policy to run the helloworld Open Horizon example ...${NC}\n"
     getUrlFile $OH_EXAMPLES_REPO/edge/services/helloworld/horizon/node.policy.json node.policy.json
     waitForAgent
 
@@ -1593,7 +1603,7 @@ fi
 
 # Summarize
 echo -e "\n----------- Summary of what was done:"
-echo "  1. Started Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, Postgres DB, Postgres DB FDO, Bao"
+echo "  1. Started Open Horizon management hub services: Agbot, CSS, Exchange, FDO, Mongo DB, OpenBao, Postgres DB, & Postgres DB FDO"
 echo "  2. Created exchange resources: system organization (${EXCHANGE_SYSTEM_ORG}) admin user, user organization (${EXCHANGE_USER_ORG}) and admin user, and agbot"
 if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-0} + ${EXCHANGE_SYSTEM_ADMIN_PW_GENERATED:-0} + ${AGBOT_TOKEN_GENERATED:-0} + ${EXCHANGE_USER_ADMIN_PW_GENERATED:-0} + ${HZN_DEVICE_TOKEN_GENERATED:-0} )) -gt 0 ]]; then
     echo "    Automatically generated these passwords/tokens:"
@@ -1628,21 +1638,21 @@ if [[ $(( ${EXCHANGE_ROOT_PW_GENERATED:-0} + ${EXCHANGE_HUB_ADMIN_PW_GENERATED:-
         echo "      export HZN_EXCHANGE_USER_AUTH=$HZN_DEVICE_ID:$HZN_DEVICE_TOKEN"
     fi
 
-    echo -e "\n    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Horizon."
+    echo -e "\n    Important: save these generated passwords/tokens in a safe place. You will not be able to query them from Open Horizon."
     echo "    Authentication to the Exchange is in the format <organization>/<identity>:<password> or \$HZN_ORG_ID/\$HZN_EXCHANGE_USER_AUTH."
 fi
 echo "  3. Installed and configured a PostgreSQL database instance for the Exchange. Important: save the generated user password in a safe place."
 echo "       export POSTGRES_USER=$POSTGRES_USER"
 echo "       export EXCHANGE_DB_PW=$EXCHANGE_DB_PW"
 if [[ -z $OH_NO_AGENT ]]; then
-    echo "  4. Installed and configured the Horizon agent and CLI (hzn)"
+    echo "  4. Installed and configured the Open Horizon agent and CLI (hzn)"
 else   # only cli
-    echo "  4. Installed and configured the Horizon CLI (hzn)"
+    echo "  4. Installed and configured the Open Horizon CLI (hzn)"
 fi
-echo "  5. Created a Horizon developer key pair"
+echo "  5. Created a Open Horizon developer key pair"
 nextNum='6'
 if [[ -z $OH_NO_EXAMPLES ]]; then
-    echo "  $nextNum. Installed the Horizon examples"
+    echo "  $nextNum. Installed the Open Horizon examples"
     nextNum=$((nextNum+1))
 fi
 if [[ -z $OH_NO_AGENT && -z $OH_NO_REGISTRATION ]]; then
@@ -1653,7 +1663,7 @@ echo "  $nextNum. Created a bao instance: $HZN_BAO_URL/v1/sys/seal-status" # $HZ
 echo "    Automatically generated this key/token:"
 echo "      export BAO_UNSEAL_KEY=$BAO_UNSEAL_KEY"
 echo "      export BAO_ROOT_TOKEN=$BAO_ROOT_TOKEN"
-echo -e "\n    Important: save this generated key/token in a safe place. You will not be able to query them from Horizon."
+echo -e "\n    Important: save this generated key/token in a safe place. You will not be able to query them from Open Horizon."
 nextNum=$((nextNum+1))
 echo "  $nextNum. Created a FDO Owner Service instance."
 echo "    Run test-fdo.sh to simulate the transfer of a device and automatic workload provisioning."
