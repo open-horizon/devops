@@ -1,9 +1,11 @@
 _site/
 .sass-cache/
+.idea/
 .jekyll-cache/
 .jekyll-metadata
 .DS_Store
 **/.DS_Store
+mgmt-hub/node.policy.json
 .tree.txt.swp
 vendor
 .bundle
