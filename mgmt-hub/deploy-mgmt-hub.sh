@@ -155,7 +155,7 @@ export EXCHANGE_WAIT_ITERATIONS=${EXCHANGE_WAIT_ITERATIONS:-30}
 export EXCHANGE_WAIT_INTERVAL=${EXCHANGE_WAIT_INTERVAL:-2}   # number of seconds to sleep between iterations
 export HZN_EXCHANGE_URL=${HZN_EXCHANGE_URL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$EXCHANGE_PORT/v1}
 
-export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-openhorizon/${ARCH}_agbot}
+export AGBOT_IMAGE_NAME=${AGBOT_IMAGE_NAME:-ghcr.io/open-horizon/${ARCH}_agbot}
 export AGBOT_IMAGE_TAG=${AGBOT_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export AGBOT_ID=${AGBOT_ID:-agbot}   # its agbot id in the exchange
 export AGBOT_PORT=${AGBOT_PORT:-3110}   #todo: should we not expose this to anything but localhost?
@@ -181,8 +181,8 @@ if [[ $START_SECOND_AGBOT == 'true' ]]; then export COMPOSE_FILE='docker-compose
 export AGBOT2_PORT=${AGBOT2_PORT:-3120}
 export AGBOT2_SECURE_PORT=${AGBOT2_SECURE_PORT:-3121}
 
-export CSS_IMAGE_NAME=${CSS_IMAGE_NAME:-openhorizon/${ARCH}_cloud-sync-service}
-export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-1.10.1-1591}   # or can be set to stable or a specific version
+export CSS_IMAGE_NAME=${CSS_IMAGE_NAME:-ghcr.io/open-horizon/${ARCH}_cloud-sync-service}
+export CSS_IMAGE_TAG=${CSS_IMAGE_TAG:-latest}   # or can be set to stable or a specific version
 export CSS_PORT=${CSS_PORT:-9443}   # the host port the css container port should be mapped to
 export CSS_INTERNAL_PORT=${CSS_INTERNAL_PORT:-8080}   # the port css is listening on inside the container (gets mapped to host port CSS_PORT)
 # For descriptions and defaults for these values in CSS: https://github.com/open-horizon/edge-sync-service/blob/master/common/config.go
@@ -206,7 +206,7 @@ export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get
 export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
 export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
-export MONGO_PROTOCOL=${MONGO_PROTOCOL:-mongo}
+export MONGO_PROTOCOL=${MONGO_PROTOCOL:-mongodb://mongo}
 export MONGO_UTILITY=${MONGO_UTILITY:-mongo}
 # MongoDB version 6.x uses a different license than in version 4.0, and is no longer a compliant open source license.
 # Users should evaluate this license change before hand on their own.
@@ -214,9 +214,7 @@ export MONGO_UTILITY=${MONGO_UTILITY:-mongo}
 # Enable at your own risk!
 export MONGO_VERSION_6_ENABLE=${MONGO_VERSION_6_ENABLE:-false}
 if [[ "$MONGO_VERSION_6_ENABLE" == true ]]; then
-  CSS_IMAGE_TAG=latest
   MONGO_IMAGE_TAG=6.0
-  MONGO_PROTOCOL=mongodb://mongo
   MONGO_UTILITY=mongosh
 fi
 
