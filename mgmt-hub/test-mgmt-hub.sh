@@ -194,7 +194,8 @@ testEdgeService() {
     assertTrue "hzn eventlog list | grep -q 'Image loaded for $EXCHANGE_SYSTEM_ORG/ibm.helloworld' "
     assertTrue "hzn eventlog list | grep -q 'Workload service containers for $EXCHANGE_SYSTEM_ORG/ibm.helloworld are up and running' "
 
-    assertTrue "docker ps --format '{{ .Names }}' | grep -q -E '\-ibm.helloworld$' "
+
+    assertTrue "(sudo docker ps --format '{{ .Names }}' | grep -q -E '\-ibm.helloworld$') || (sudo podman ps --format '{{ .Names }}' | grep -q -E '\-ibm.helloworld$') "
 
     #assertTrue "hzn service log ibm.helloworld | grep -q 'says: Hello ' "   #todo: restore this test when https://github.com/open-horizon/anax/issues/2626 is fixed
 }

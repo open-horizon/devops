@@ -197,14 +197,14 @@ export HZN_FSS_CSSURL=${HZN_FSS_CSSURL:-$HZN_TRANSPORT://$HZN_LISTEN_IP:$CSS_POR
 
 export POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-scram-sha-256}
 export POSTGRES_IMAGE_NAME=${POSTGRES_IMAGE_NAME:-postgres}
-export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-13}   # or can be set to stable or a specific version
+export POSTGRES_IMAGE_TAG=${POSTGRES_IMAGE_TAG:-17}   # or can be set to stable or a specific version
 export POSTGRES_PORT=${POSTGRES_PORT:-5432}
 export POSTGRES_USER=${POSTGRES_USER:-admin}
 export EXCHANGE_DATABASE=${EXCHANGE_DATABASE:-exchange}   # the db the exchange uses in the postgres instance
 export AGBOT_DATABASE=${AGBOT_DATABASE:-exchange}   #todo: figure out how to get 2 different databases created in postgres. The db the agbot uses in the postgres instance
 
 export MONGO_IMAGE_NAME=${MONGO_IMAGE_NAME:-mongo}
-export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.0.6}   # or can be set to stable or a specific version
+export MONGO_IMAGE_TAG=${MONGO_IMAGE_TAG:-4.4.6}   # or can be set to stable or a specific version
 export MONGO_PORT=${MONGO_PORT:-27017}
 export MONGO_PROTOCOL=${MONGO_PROTOCOL:-mongodb://mongo}
 export MONGO_UTILITY=${MONGO_UTILITY:-mongo}
@@ -934,7 +934,7 @@ if isMacOS; then
     fi
 else   # ubuntu and redhat
     echo "Updating packages..."
-    runCmdQuietly ${PKG_MNGR} update -qq
+    runCmdQuietly ${PKG_MNGR} update -yq
     echo "Installing prerequisites, this could take a minute..."
     if [[ $HZN_TRANSPORT == 'https' ]]; then
         optionalOpensslPkg='openssl'
