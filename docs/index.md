@@ -23,7 +23,7 @@ Read the notes and then run the following command to deploy the Horizon componen
 - Support for Windows Subsystem for Linux (WSL 1&2) should also considered **experimental** at this time. WSL2's Ubuntu is based on `init.d` instead of the `systemd` used in standard Ubuntu distributions. The Open Horizon Agent requires `systemd` support so workarounds will simulate systemd usiing [this script](https://gist.githubusercontent.com/djfdyuruiry/6720faa3f9fc59bfdf6284ee1f41f950/raw/952347f805045ba0e6ef7868b18f4a9a8dd2e47a/install-sg.sh). This technique may not be stable and reliable.
 - Deployments can be customized by overriding environment variables in [deploy-mgmt-hub.sh](https://github.com/open-horizon/devops/blob/master/mgmt-hub/deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
 All `*_PW` and `*_TOKEN` environment variables and variables in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
-- You can publish your own custom sample services during deployment by setting the `BYO_SAMPLES` environment variable to point to a text file containing GitHub URLs of your service repositories (one per line). For more information, see [Using custom sample services](#using-custom-samples).
+- You can publish your own custom sample services during deployment by setting the `BYO_SAMPLES` environment variable to point to a text file containing GitHub URLs of your service repositories. Each URL must be on a separate line.
 
 Preparation required for **Windows** operating systems:
 
@@ -42,39 +42,6 @@ The All-in-One environment is intended for use on devices or virtual machines wi
 Ubuntu Server 20.04 and 22.04 are the preferred operating systems for evaluating and learning Open Horizon for now. You can download Ubuntu Server from [Ubuntu Releases](https://releases.ubuntu.com/).
 
 If you wish to use the All-in-One environment in a virtual machine, please read the [VM setup notes](#setup-vm) further down for details.
-
-### <a id="using-custom-samples">Using Custom Sample Services</a>
-
-By default, the All-in-One deployment publishes a set of example services from the Open Horizon project. You can customize which sample services are published during deployment by using the `BYO_SAMPLES` (Bring Your Own Samples) environment variable.
-
-To use custom samples:
-
-1. Create a text file (for example, `samples.txt`) containing GitHub URLs of your service repositories, one per line:
-
-   ```text
-   https://github.com/open-horizon/open-horizon-services/tree/main/web-helloworld-python
-   https://github.com/your-org/your-custom-service
-   ```
-   {: codeblock}
-
-2. Set the `BYO_SAMPLES` environment variable to point to your file before running the deployment script:
-
-   ```bash
-   export BYO_SAMPLES=samples.txt
-   curl -sSL https://raw.githubusercontent.com/open-horizon/devops/master/mgmt-hub/deploy-mgmt-hub.sh | bash
-   ```
-   {: codeblock}
-
-**Requirements for custom sample services:**
-
-- Each service repository must contain a Makefile with the following targets:
-  - `publish-service`: Publishes the service definition to the Exchange
-  - `publish-service-policy`: Publishes the service policy
-  - `publish-deployment-policy`: Publishes the deployment policy
-- Services must follow the Open Horizon service structure and conventions
-- The deployment script will clone each repository and run `make publish-only` to publish the service
-
-**Note:** Custom samples are published in addition to the default Open Horizon example services. The default services include CPU, GPS, and Hello World examples.
 
 ### <a id="all-in-one-what-next">What To Do Next</a>
 
