@@ -232,12 +232,12 @@ export FDO_OWN_SVC_DB_PASSWORD=${FDO_OWN_SVC_DB_PASSWORD:-$(generateToken 30)}
 export FDO_OWN_SVC_DB_PORT=${FDO_OWN_SVC_DB_PORT:-5433} # Need a different port than the Exchange
 export FDO_OWN_SVC_DB_URL=${FDO_OWN_SVC_DB_URL:-jdbc:postgresql://postgres-fdo-owner-service:5432/${FDO_OWN_SVC_DB}}
 export FDO_OWN_SVC_DB_USER=${FDO_OWN_SVC_DB_USER:-fdouser}
-export FDO_OWN_SVC_IMAGE_NAME=${FDO_OWN_SVC_IMAGE_NAME:-openhorizon/fdo-owner-services}
+export FDO_OWN_SVC_IMAGE_NAME=${FDO_OWN_SVC_IMAGE_NAME:-ghcr.io/open-horizon/fdo-owner-services}
 export FDO_OWN_SVC_IMAGE_TAG=${FDO_OWN_SVC_IMAGE_TAG:-testing}
 export FDO_OWN_SVC_PORT=${FDO_OWN_SVC_PORT:-8042}
 export FDO_OWN_SVC_VERBOSE=${FDO_OWN_SVC_VERBOSE:-false}
 export FDO_OPS_SVC_HOST=${FDO_OPS_SVC_HOST:-${HZN_LISTEN_IP}:${FDO_OWN_SVC_PORT}}
-export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.10}
+export FIDO_DEVICE_ONBOARD_REL_VER=${FIDO_DEVICE_ONBOARD_REL_VER:-1.1.11}
 
 export SDO_IMAGE_NAME=${SDO_IMAGE_NAME:-openhorizon/sdo-owner-services}
 export SDO_IMAGE_TAG=${SDO_IMAGE_TAG:-lastest}   # or can be set to stable, testing, or a specific version
