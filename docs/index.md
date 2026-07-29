@@ -23,7 +23,7 @@ Read the notes and then run the following command to deploy the Horizon componen
 - Support for Windows Subsystem for Linux (WSL 1&2) should also considered **experimental** at this time. WSL2's Ubuntu is based on `init.d` instead of the `systemd` used in standard Ubuntu distributions. The Open Horizon Agent requires `systemd` support so workarounds will simulate systemd usiing [this script](https://gist.githubusercontent.com/djfdyuruiry/6720faa3f9fc59bfdf6284ee1f41f950/raw/952347f805045ba0e6ef7868b18f4a9a8dd2e47a/install-sg.sh). This technique may not be stable and reliable.
 - Deployments can be customized by overriding environment variables in [deploy-mgmt-hub.sh](https://github.com/open-horizon/devops/blob/master/mgmt-hub/deploy-mgmt-hub.sh). The variables can be found near the top of the script, right after the usage message and command line parsing code.
 All `*_PW` and `*_TOKEN` environment variables and variables in the form `VAR_NAME=${VAR_NAME:-defaultvalue}` can be overridden.
-- You can publish your own custom sample services during deployment by setting the `BYO_SAMPLES` environment variable to point to a text file that contains GitHub URLs of your service repositories. For detailed instructions, see the [Using Custom Sample Services](../hub/custom_samples.md).
+- You can publish your own custom sample services during deployment by setting the `BYO_SAMPLES` environment variable to point to a text file that contains GitHub URLs of your service repositories. For detailed instructions, see the [Using Custom Sample Services](../../hub/custom_samples.md).
 
 Preparation required for **Windows** operating systems:
 
