@@ -3,7 +3,7 @@ copyright: Contributors to the Open Horizon project
 years: 2025 - 2026
 title: All-in-One Mgmt Hub
 description: Documentation for Horizon Management Hub
-lastupdated: 2026-03-30
+lastupdated: 2026-10-15
 nav_order: 2
 parent: Management Hub
 ---
